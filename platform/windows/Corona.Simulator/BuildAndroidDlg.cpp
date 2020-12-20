@@ -1,9 +1,25 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
+// Copyright (C) 2018 Corona Labs Inc.
 // Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
@@ -18,16 +34,19 @@
 #include "BuildResult.h"
 #include "WinGlobalProperties.h"
 #include "WinString.h"
-#include "BrowseDirDialog.h"
+#include "DirDialog.h"
 #include "HtmlMessageDlg.h"
 #include "MessageDlg.h"
 #include "ListKeyStore.h"
 #include "CoronaInterface.h"
 #include "Core/Rtt_Build.h"
 #include "Rtt_AndroidSupportTools.h"
+#include "Rtt_Authorization.h"
+#include "Rtt_AuthorizationTicket.h"
 #include "Rtt_SimulatorAnalytics.h"
 #include "Rtt_TargetDevice.h"
 #include "Rtt_TargetAndroidAppStore.h"
+#include "Rtt_WebServicesSession.h"
 #include <Shlwapi.h>
 
 
@@ -82,6 +101,8 @@ BOOL CBuildAndroidDlg::OnInitDialog()
 {
 	WinString stringConverter;
 	CString stringBuffer;
+	Rtt::Authorization *pAuth = GetWinProperties()->GetAuth();
+	const Rtt::AuthorizationTicket *pTicket = (pAuth != NULL) ? pAuth->GetTicket() : NULL;
 
 	// Initialize base class first.
 	CDialog::OnInitDialog();
@@ -156,14 +177,29 @@ BOOL CBuildAndroidDlg::OnInitDialog()
     m_nValidFields = 0;
 
 	// If there isn't a package name, create one by reversing the user's email address and adding the app name
-	if (m_pProject->GetPackage().IsEmpty())
+	if (m_pProject->GetPackage().IsEmpty() && pTicket)
 	{
-		CString package("com.solar2d.app.");
+		CString emailAddr(pTicket->GetUsername());
+		CString delim = _T(".@+:?/=");
+
+		int i = 0;
+		CStringArray saItems;
+		for(CString sItem = emailAddr.Tokenize(delim,i); i >= 0; sItem = emailAddr.Tokenize(delim,i))
+		{
+			saItems.Add( sItem );
+		}
+
+		CString package;
+		for (int i = saItems.GetSize() - 1; i >= 0; --i )
+		{
+			package.Append(saItems.GetAt(i));
+			package.Append(_T("."));
+		}
 		package.Append(m_pProject->GetName());
 
 		for (int c = 0; c < package.GetLength(); c++)
 		{
-			if (package[c] > 255 || (!isalnum(package[c]) && package[c] != '.' && package[c] != '_'))
+			if (package[c] > 255 || (! isalnum(package[c]) && package[c] != '.' && package[c] != '_'))
 			{
 				package.SetAt(c, _T('_'));
 			}
@@ -187,6 +223,8 @@ BOOL CBuildAndroidDlg::OnInitDialog()
 	// 1. saved keystore path for this project
 	// 2. last used keystore path (also get last-used password)
 	//    (if neither are available, there is also a saved keystore directory for browsing)
+	// or, for trial users, the app's installed debug.keystore
+	if ((pTicket != NULL) && pTicket->IsAllowedToBuild(Rtt::TargetDevice::kAndroidPlatform))
 	{
 		if( m_pProject->GetKeystorePath().IsEmpty() ) // none saved for project, get last-used path
 		{
@@ -220,6 +258,12 @@ BOOL CBuildAndroidDlg::OnInitDialog()
 				SetDlgItemText( IDC_BUILD_KEYSTORE, m_pProject->GetKeystorePath() );
 			}
 		}
+	}
+	else // trial build only allows debug keystore
+	{
+		SetDlgItemText( IDC_BUILD_KEYSTORE, CCoronaProject::GetTrialKeystorePath() );
+		m_pProject->SetKeystorePassword( GetTrialKeystorePassword() );
+		GetDlgItem( IDC_BUILD_KEYSTORE )->EnableWindow( FALSE );  // no editing for trial users
 	}
 
 	// After all that, get the values for keystore and password and try to initialize alias list
@@ -294,6 +338,8 @@ void CBuildAndroidDlg::SetProject( const std::shared_ptr<CCoronaProject>& pProje
 // Key Alias dropdown.
 void CBuildAndroidDlg::OnBrowseKeystore()
 {
+	// Authorization check - trial & ios-only can't change the keystore
+	if( appAllowFullBuild(Rtt::TargetDevice::kAndroidPlatform) )
 	{
 		GetDlgItem( IDC_BUILD_KEYSTORE )->EnableWindow( TRUE );  // may have just purchased
 
@@ -528,9 +574,14 @@ void CBuildAndroidDlg::OnBrowseSaveto()
 	   ::SHGetFolderPath(nullptr, CSIDL_MYDOCUMENTS, nullptr, 0, sDir.GetBuffer(MAX_PATH));
 	   sDir.ReleaseBuffer();
    }
+
+   CDirDialog dirDialog;
+   dirDialog.m_strSelDir = sDir;
+   dirDialog.m_strTitle.LoadString(IDS_SELECT_BUILD_OUTPUT_FOLDER_DESCRIPTION);
    
-   if (CBrowseDirDialog::Browse(sDir, IDS_SELECT_BUILD_OUTPUT_FOLDER_DESCRIPTION))
+   if( dirDialog.DoBrowse() == IDOK )
    {
+      sDir = dirDialog.m_strPath;
       SetDlgItemText( IDC_BUILD_SAVETO, sDir );
    }
 }
@@ -595,14 +646,6 @@ void CBuildAndroidDlg::OnOK()  // OnBuild()
 	int iVersionCode;
 	int iIndex;
 	bool isLiveBuild;
-
-	bool acceptedSDK = (AfxGetApp()->GetProfileString( REGISTRY_BUILD_ANDROID, _T("AcceptedSDKLicense"), _T("NO") ).Compare(_T("YES")) == 0);
-	if(!acceptedSDK)
-	{
-		UINT ret = DisplayWarningMessageWithHelp(IDS_ANDROID_BUILD, IDS_ANDROID_SDK_LICENSE, _T("https://developer.android.com/studio/terms"));
-		if (ret != IDYES) return;
-		AfxGetApp()->WriteProfileString( REGISTRY_BUILD_ANDROID, _T("AcceptedSDKLicense"), _T("YES") );
-	}
 
 	// Fetch and validate field values.
     GetDlgItemText(IDC_BUILD_APPNAME, sAppName);
@@ -726,6 +769,10 @@ void CBuildAndroidDlg::OnOK()  // OnBuild()
 	}
 	isLiveBuild = (IsDlgButtonChecked(IDC_CREATE_LIVE_BUILD) == BST_CHECKED);
 	
+	// Display a nag window if the user is not authorized to build for the selected app store.
+	// In this case, the build system will create a trial version of the app instead.
+	appAllowFullBuild(pTargetStore->GetPlatform());
+
 	// Store field settings to project.
 	m_pProject->SetName(sAppName);
 	m_pProject->SetAndroidVersionCode(iVersionCode);

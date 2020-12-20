@@ -31,7 +31,6 @@
     <ClCompile Include="..\Corona.Native.Library.Win32\WinFile.cpp">
       <Filter>platform\windows\Corona.Native.Library.Win32</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\librtt\Core\Rtt_String.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\librtt\Rtt_Archive.h">

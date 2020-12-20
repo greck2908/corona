@@ -1,9 +1,25 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
+// Copyright (C) 2018 Corona Labs Inc.
 // Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
@@ -19,7 +35,6 @@
 #include "Renderer/Rtt_Program.h"
 #include "Renderer/Rtt_Texture.h"
 #include "Renderer/Rtt_Uniform.h"
-#include "Display/Rtt_ShaderResource.h"
 #include "Core/Rtt_Config.h"
 #include "Core/Rtt_Allocator.h"
 #include "Core/Rtt_Assert.h"
@@ -130,23 +145,6 @@ namespace Rtt
 {
 
 // ----------------------------------------------------------------------------
-
-size_t
-CommandBuffer::GetMaxVertexTextureUnits()
-{
-	static size_t sMaxUnits = ~0; // 0 would be valid result
-	
-	if ( ~0 == sMaxUnits )
-	{
-		GLint maxUnits = 0;
-
-		glGetIntegerv( GL_MAX_TEXTURE_IMAGE_UNITS, &maxUnits ); // TODO: check if this is same on Android, etc.
-		sMaxUnits = maxUnits;
-		GL_CHECK_ERROR();
-	}
-
-	return sMaxUnits;
-}
 
 size_t
 CommandBuffer::GetMaxTextureSize()
@@ -292,7 +290,6 @@ GLCommandBuffer::GLCommandBuffer( Rtt_Allocator* allocator )
 	 fCurrentDrawVersion( Program::kMaskCount0 ),
 	 fProgram( NULL ),
      fDefaultFBO( 0 ),
-	 fTimeTransform( NULL ),
 	 fTimerQueries( new U32[kTimerQueryCount] ),
 	 fTimerQueryIndex( 0 ),
 	 fElapsedTimeGPU( 0.0f )
@@ -438,11 +435,9 @@ GLCommandBuffer::BindProgram( Program* program, Program::Version version )
 	WRITE_COMMAND( kCommandBindProgram );
 	Write<Program::Version>( version );
 	Write<GPUResource*>( program->GetGPUResource() );
-
+	
 	fCurrentPrepVersion = version;
 	fProgram = program;
-
-	fTimeTransform = program->GetShaderResource()->GetTimeTransform();
 }
 
 void
@@ -998,20 +993,7 @@ GLCommandBuffer::Write( T value )
 
 void GLCommandBuffer::ApplyUniforms( GPUResource* resource )
 {
-	GLProgram* glProgram = static_cast<GLProgram*>(resource);
-
-	Real rawTotalTime;
-	bool transformed = false;
-
-	if (fTimeTransform)
-	{
-		const UniformUpdate& time = fUniformUpdates[Uniform::kTotalTime];
-		if (time.uniform)
-		{
-			transformed = fTimeTransform->Apply( time.uniform, &rawTotalTime, time.timestamp );
-		}
-	}
-
+	GLProgram* glProgram = static_cast<GLProgram*>( resource );
 	for( U32 i = 0; i < Uniform::kNumBuiltInVariables; ++i)
 	{
 		const UniformUpdate& update = fUniformUpdates[i];
@@ -1019,11 +1001,6 @@ void GLCommandBuffer::ApplyUniforms( GPUResource* resource )
 		{		
 			ApplyUniform( resource, i );
 		}
-	}
-
-	if (transformed)
-	{
-		fUniformUpdates[Uniform::kTotalTime].uniform->SetValue(rawTotalTime);
 	}
 }
 

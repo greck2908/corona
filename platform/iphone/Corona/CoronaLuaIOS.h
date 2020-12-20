@@ -1,11 +1,9 @@
-//////////////////////////////////////////////////////////////////////////////
-//
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
-// Contact: support@coronalabs.com
-//
-//////////////////////////////////////////////////////////////////////////////
+// ----------------------------------------------------------------------------
+// 
+// CoronaLuaIOS.h
+// Copyright (c) 2013 Corona Labs Inc. All rights reserved.
+// 
+// ----------------------------------------------------------------------------
 
 #ifndef _CoronaLuaIOS_H__
 #define _CoronaLuaIOS_H__

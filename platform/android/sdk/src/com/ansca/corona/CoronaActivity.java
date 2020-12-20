@@ -1,9 +1,25 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
+// Copyright (C) 2018 Corona Labs Inc.
 // Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
@@ -16,7 +32,6 @@ import android.app.UiModeManager;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.animation.AlphaAnimation;
@@ -32,8 +47,8 @@ import com.ansca.corona.permissions.PermissionsServices;
 import com.ansca.corona.permissions.PermissionState;
 import com.ansca.corona.permissions.RequestPermissionsResultData;
 import com.ansca.corona.storage.ResourceServices;
-import android.view.DisplayCutout;
-import android.view.ViewTreeObserver;
+import com.ansca.corona.graphics.opengl.GLSurfaceView;
+
 /** 
  * The activity window that hosts the Corona project. 
  * @see <a href="http://developer.android.com/reference/android/app/Activity.html">Activity</a>
@@ -50,7 +65,6 @@ public class CoronaActivity extends Activity {
 	private com.ansca.corona.purchasing.StoreProxy myStore = null;
 	private CoronaStatusBarSettings myStatusBarMode;
 	private android.database.ContentObserver fAutoRotateObserver = null;
-	private DisplayCutout fDisplayCutout = null;
 	
 	private Controller fController;
 	private CoronaRuntime fCoronaRuntime;
@@ -221,7 +235,7 @@ public class CoronaActivity extends Activity {
 		//       We do this because the Android OS does not support ADJUST_PAN when in fullscreen mode.
 		requestWindowFeature(Window.FEATURE_NO_TITLE);
 
-		if (!isKeyboardAppPanningEnabled) {
+		if (isKeyboardAppPanningEnabled == false) {
 			getWindow().setFlags(
 					WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
 					WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
@@ -249,26 +263,6 @@ public class CoronaActivity extends Activity {
 
 		// Create our CoronaRuntime, which also initializes the native side of the CoronaRuntime.
 		fCoronaRuntime = new CoronaRuntime(this, false);
-
-		// Set initialSystemUiVisibility before splashScreen comes up
-		try {
-			android.content.pm.ActivityInfo activityInfo;
-			activityInfo = getPackageManager().getActivityInfo(getComponentName(), android.content.pm.PackageManager.GET_META_DATA);
-			if ((activityInfo != null) && (activityInfo.metaData != null)) {
-				String initialSystemUiVisibility = activityInfo.metaData.getString("initialSystemUiVisibility");
-				if (initialSystemUiVisibility != null) {
-					if (initialSystemUiVisibility.equals("immersiveSticky") && Build.VERSION.SDK_INT < 19) {
-						fCoronaRuntime.getController().setSystemUiVisibility("lowProfile");
-					} else {
-						fCoronaRuntime.getController().setSystemUiVisibility(initialSystemUiVisibility);
-					}
-				}
-			}
-		}
-		catch (Exception ex) {
-			ex.printStackTrace();
-		}
-
 		// fCoronaRuntime = new CoronaRuntime(this, false);		// for Tegra debugging
 
 		showCoronaSplashScreen();
@@ -616,7 +610,7 @@ public class CoronaActivity extends Activity {
 	/**
 	 * Logs the requested orientation.
 	 * This is an internal method that can only be called by Corona.
-	 * @param orientationToLog The "screen orientation" constant in class ActivityInfo we want to log.
+	 * @param orintationToLog The "screen orientation" constant in class ActivityInfo we want to log.
 	 */
 	void logOrientation(int orientationToLog) {
 		fLoggedOrientation = orientationToLog;
@@ -1115,24 +1109,11 @@ public class CoronaActivity extends Activity {
 		if (mode == myStatusBarMode) {
 			return;
 		}
-		if (android.os.Build.VERSION.SDK_INT >= 28) {
-			getWindow().getDecorView().setOnApplyWindowInsetsListener(new android.view.View.OnApplyWindowInsetsListener() {
-				@Override
-				public android.view.WindowInsets onApplyWindowInsets(android.view.View v, android.view.WindowInsets insets) {
-					v.onApplyWindowInsets(insets);
-					fDisplayCutout = insets.consumeStableInsets().getDisplayCutout();
-					return insets;
-				}
-			} );
-		}
+		
 		// Show/hide the statusbar.
 		if (mode == CoronaStatusBarSettings.HIDDEN) {
 			getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
 			getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
-			if (Build.VERSION.SDK_INT >= 28){
-				getWindow().getAttributes().layoutInDisplayCutoutMode
-						= WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-			}
 
 		} else if (mode == CoronaStatusBarSettings.DEFAULT
 				|| mode == CoronaStatusBarSettings.TRANSLUCENT
@@ -1192,10 +1173,6 @@ public class CoronaActivity extends Activity {
 	
 	CoronaStatusBarSettings getStatusBarMode() {
 		return myStatusBarMode;
-	}
-
-	public android.view.DisplayCutout getDisplayCutout(){
-		return fDisplayCutout;
 	}
 	
 	int getStatusBarHeight() {
@@ -2096,8 +2073,7 @@ public class CoronaActivity extends Activity {
 		android.content.res.Resources resources = context.getResources();
 		com.ansca.corona.storage.FileServices fileServices;
 		fileServices = new com.ansca.corona.storage.FileServices(context);
-		boolean splashExists = fileServices.doesResourceFileExist("drawable/_corona_splash_screen.png")
-				            || fileServices.doesResourceFileExist("drawable/_corona_splash_screen.jpg");
+		boolean splashExists = fileServices.doesResourceFileExist("drawable/_corona_splash_screen.png");
 
 		// Log.v("Corona", "showCoronaSplashScreen: splashExists: " + splashExists);
 		if ( splashExists )
@@ -2233,6 +2209,9 @@ public class CoronaActivity extends Activity {
 					if (parent != null) {
 						parent.removeView(splashView);
 					}
+
+					// Ping a beacon if we displayed the default splash screen
+					SplashScreenBeacon.sendBeacon(getRuntimeTaskDispatcher());
 				}
 			}, 500);
 
@@ -2274,7 +2253,7 @@ public class CoronaActivity extends Activity {
 	 * Displays the device's default photo library activity for selecting an image file.
 	 * @param destinationFilePath The path\file name to copy the selected photo to. Can be set null.
 	 */
-	// TODO: Have this convert the image to the proper format per this bug: http://bugs.coronalabs.com/default.asp?45777
+	// TODO: Have this convert the image to the proper format per this bug: http://bugs.anscamobile.com/default.asp?45777
 	void showSelectImageWindowUsing(String destinationFilePath) {
 		// Verify we can read from external storage if needed, requesting permission if we don't have it!
 		// This check only applies to Android 4.1 and above. 
@@ -3474,7 +3453,7 @@ public class CoronaActivity extends Activity {
 		super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
 		// Fetch the handler that was assigned the given request code.
-		CoronaActivity.OnRequestPermissionsResultHandler handler;
+		CoronaActivity.OnRequestPermissionsResultHandler handler = null;
 		handler = (CoronaActivity.OnRequestPermissionsResultHandler)fRequestPermissionsResultHandlers.get(Integer.valueOf(requestCode));
 
 		// Do not continue if the given request code is unknown.
@@ -3911,8 +3890,8 @@ public class CoronaActivity extends Activity {
 		 * @param listener The listener reference to be removed. Can be null.
 		 */
 		public static void removeOnGlobalLayoutListener(
-			ViewTreeObserver viewTreeObserver,
-			ViewTreeObserver.OnGlobalLayoutListener listener)
+			android.view.ViewTreeObserver viewTreeObserver,
+			android.view.ViewTreeObserver.OnGlobalLayoutListener listener)
 		{
 			// Validate.
 			if ((viewTreeObserver == null) || (listener == null)) {
@@ -3921,9 +3900,7 @@ public class CoronaActivity extends Activity {
 
 			// Remove the listener.
 			try {
-				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-					viewTreeObserver.removeOnGlobalLayoutListener(listener);
-				}
+				viewTreeObserver.removeOnGlobalLayoutListener(listener);
 			}
 			catch (Exception ex) {}
 		}

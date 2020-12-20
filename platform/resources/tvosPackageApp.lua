@@ -1,15 +1,33 @@
 ------------------------------------------------------------------------------
 --
--- This file is part of the Corona game engine.
--- For overview and more information on licensing please refer to README.md 
--- Home page: https://github.com/coronalabs/corona
+-- Copyright (C) 2018 Corona Labs Inc.
 -- Contact: support@coronalabs.com
+--
+-- This file is part of the Corona game engine.
+--
+-- Commercial License Usage
+-- Licensees holding valid commercial Corona licenses may use this file in
+-- accordance with the commercial license agreement between you and 
+-- Corona Labs Inc. For licensing terms and conditions please contact
+-- support@coronalabs.com or visit https://coronalabs.com/com-license
+--
+-- GNU General Public License Usage
+-- Alternatively, this file may be used under the terms of the GNU General
+-- Public license version 3. The license is as published by the Free Software
+-- Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+-- of this file. Please review the following information to ensure the GNU 
+-- General Public License requirements will
+-- be met: https://www.gnu.org/licenses/gpl-3.0.html
+--
+-- For overview and more information on licensing please refer to README.md
 --
 ------------------------------------------------------------------------------
 
 ----
 ---- Complete build of tvOS app by merging local project assets with app built
 ---- on Corona servers.
+----
+---- Copyright (c) 2015 Corona Labs Inc. All rights reserved.
 ----
 
 local json = require('json')
@@ -1000,7 +1018,7 @@ local function isBuildForDistribution( options )
 		return false
 	end
 
-	local retval = string.match( options.signingIdentityName, "iPhone Distribution" ) or string.match( options.signingIdentityName, "Apple Distribution" )
+	local retval = string.match( options.signingIdentityName, "iPhone Distribution" )
 	if retval then
 		return true
 	else
@@ -1016,7 +1034,7 @@ local function isBuildForAppStoreDistribution( options )
 		return false
 	end
 
-	local retval = string.match( options.signingIdentityName, "iPhone Distribution" ) or string.match( options.signingIdentityName, "Apple Distribution" )
+	local retval = string.match( options.signingIdentityName, "iPhone Distribution" )
 	if retval then
 		-- Adhoc profiles have a 'ProvisionedDevices' section, pure distribution profiles do not
 		local hasProvisionedDevices = captureCommandOutput("security cms -D -i '".. options.mobileProvision .."' | fgrep -c 'ProvisionedDevices'")
@@ -1499,7 +1517,6 @@ function buildExe( options )
 	local dstDir = appBundleFileUnquoted
 
 	local buildDir = dstDir .. '/.build'
-	runScript('mkdir -p "' ..  buildDir .. '"')
 
 	local pluginsDir = buildDir
 	local dstFrameworksDir = dstDir .. "/Frameworks"
@@ -1579,7 +1596,6 @@ function buildLuaPlugins( options )
 
 			-- This path signifies a Lua plugin
 			local assetPath = pluginsDir .. '/' .. pluginName .. '/lua/lua_51/'
-			local assetPath2 = pluginsDir .. '/' .. pluginName .. '/lua_51/'
 
 			if options.verbose then
 				print("Examining plugin: "..tostring(pluginName))
@@ -1588,13 +1604,8 @@ function buildLuaPlugins( options )
 			local isLuaPlugin = lfs.attributes( assetPath, "mode" ) == "directory"
 			if isLuaPlugin then
 				print("Found Lua plugin: "..tostring(pluginName))
+
 				table.insert( result, assetPath )
-			end
-	
-			local isLuaPlugin = lfs.attributes( assetPath2, "mode" ) == "directory"
-			if isLuaPlugin then
-				print("Found Lua plugin: "..tostring(pluginName))
-				table.insert( result, assetPath2 )
 			end
 		end
 
@@ -1814,7 +1825,7 @@ function tvosPostPackage( params )
 			runScript( "unzip -Z -1 "..tmpDir.."/output.zip" )
 		end
 
-		setStatus("Unpacking build with plugins")
+		setStatus("Unpacking build from server")
 
 		-- The file 'Default-568h@2x.png' is a special case: if there is one in the project,
 		-- don't overwrite it with the one from the template

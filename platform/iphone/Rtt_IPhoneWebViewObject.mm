@@ -1,9 +1,25 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
+// Copyright (C) 2018 Corona Labs Inc.
 // Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
@@ -13,7 +29,9 @@
 
 #import <UIKit/UIKit.h>
 #include <math.h>
-#import <WebKit/WebKit.h>
+//#import <MapKit/MapKit.h>
+//#import <MapKit/MKAnnotation.h>
+
 #import "AppDelegate.h"
 
 
@@ -38,8 +56,6 @@
 	#include "Display/Rtt_Display.h"
 	#include "Rtt_Runtime.h"
 #endif
-
-#import "CoronaLuaObjC+NSObject.h"
 
 // ----------------------------------------------------------------------------
 
@@ -68,11 +84,10 @@ static CGFloat kAnimationDuration = 0.3;
 
 // ----------------------------------------------------------------------------
 
-@interface Rtt_iOSWebViewContainer : UIView< WKNavigationDelegate >
+@interface Rtt_UIWebViewContainer : UIView< UIWebViewDelegate >
 {
 	Rtt::IPhoneWebViewObject *fOwner;
-	WKWebViewConfiguration *fWebViewConfiguration;
-	WKWebView *fWebView;
+	UIWebView *fWebView;
 	NSURL *fLoadingURL;
 	UIView *fActivityView;
 	BOOL isOpen;
@@ -82,8 +97,7 @@ static CGFloat kAnimationDuration = 0.3;
 }
 
 @property(nonatomic,assign,getter=owner,setter=setOwner:) Rtt::IPhoneWebViewObject *fOwner;
-@property(nonatomic,readonly,getter=webView) WKWebView *fWebView;
-@property(nonatomic,readonly,getter=webViewConfiguration) WKWebViewConfiguration *fWebViewConfiguration;
+@property(nonatomic,readonly,getter=webView) UIWebView *fWebView;
 @property(nonatomic,readonly) BOOL isOpen;
 
 - (id)initWithFrame:(CGRect)rect;
@@ -91,7 +105,7 @@ static CGFloat kAnimationDuration = 0.3;
 - (void)addObservers;
 - (void)removeObservers;
 - (void)loadHtmlString:(NSString*)htmlString baseURL:(NSURL*)baseUrl;
-- (void)loadRequest:(NSURLRequest*)request baseURL:(NSURL*)baseUrl;
+- (void)loadRequest:(NSURLRequest*)request;
 - (void)stopLoading;
 - (BOOL)back;
 - (BOOL)forward;
@@ -102,31 +116,32 @@ static CGFloat kAnimationDuration = 0.3;
 
 @end
 
-@implementation Rtt_iOSWebViewContainer
+@implementation Rtt_UIWebViewContainer
 
 @synthesize fOwner;
 @synthesize fWebView;
 @synthesize isOpen;
-@synthesize fWebViewConfiguration;
 
--(WKWebView*)webView
+- (id)initWithFrame:(CGRect)rect
 {
-	if(fWebView == nil) {
+	self = [super initWithFrame:rect];
+	if ( self )
+	{
+		fOwner = nil;
+		fLoadingURL = nil;
+
         // Propagate the w,h, but do not propagate the origin, as the parent already accounts for it.
-        CGRect rect = [super frame];
 		CGRect webViewRect = rect;
 		webViewRect.origin = CGPointZero;
-		fWebView = [[WKWebView alloc] initWithFrame:webViewRect configuration:fWebViewConfiguration];
-		[fWebViewConfiguration release];
-		fWebViewConfiguration = nil;
-		fWebView.navigationDelegate = self;
-//		fWebView.scalesPageToFit = YES;
+		fWebView = [[UIWebView alloc] initWithFrame:webViewRect];
+		fWebView.delegate = self;
+		fWebView.scalesPageToFit = YES;
         
 		fActivityView = [[UIView alloc] initWithFrame:webViewRect];
 		fActivityView.backgroundColor = [UIColor grayColor];
 		
 		UIActivityIndicatorView *indicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhiteLarge];
-		[fActivityView addSubview:indicator];
+		[fActivityView addSubview:indicator];		
 		[indicator release];
 
 		isOpen = false;
@@ -144,24 +159,7 @@ static CGFloat kAnimationDuration = 0.3;
 
 		CGPoint center = { (CGFloat)0.5f*CGRectGetWidth( rect ), (CGFloat)0.5f*CGRectGetHeight( rect ) };
 		[indicator setCenter:center];
-	}
-	return fWebView;
-}
-
-- (id)initWithFrame:(CGRect)rect
-{
-	self = [super initWithFrame:rect];
-	if ( self )
-	{
-		fWebViewConfiguration = [[WKWebViewConfiguration alloc] init];
-		fOwner = nil;
-		fLoadingURL = nil;
-		fWebView = nil;
-
-		isOpen = false;
-		keyboardShown = NO;
-		isLoading = NO;
-		        
+        
         [self addObservers];
 	}
 
@@ -175,10 +173,9 @@ static CGFloat kAnimationDuration = 0.3;
 	[fActivityView release];
 	[fLoadingURL release];
 
-	[fWebView setNavigationDelegate:nil];
+	[fWebView setDelegate:nil];
 	[fWebView stopLoading];
 	[fWebView release];
-	[fWebViewConfiguration release];
 
 	[super dealloc];
 }
@@ -222,7 +219,7 @@ static CGFloat kAnimationDuration = 0.3;
 {
 	if ( isLoading )
 	{
-		[self.webView stopLoading];
+		[fWebView stopLoading];
 	}
 	
 	fLoadingURL = nil;
@@ -230,15 +227,15 @@ static CGFloat kAnimationDuration = 0.3;
 	if(htmlString)
 	{
 		isLoading = true;
-		[self.webView loadHTMLString:htmlString baseURL:baseUrl];
+		[fWebView loadHTMLString:htmlString baseURL:baseUrl];
 	}
 	
 }
-- (void)loadRequest:(NSURLRequest*)request baseURL:(NSURL*)baseUrl
+- (void)loadRequest:(NSURLRequest*)request
 {
 	if ( isLoading )
 	{
-		[self.webView stopLoading];
+		[fWebView stopLoading];
 	}
 
     
@@ -276,11 +273,8 @@ static CGFloat kAnimationDuration = 0.3;
     
 	[fLoadingURL release];
 	fLoadingURL = [request.URL retain];
-	if([fLoadingURL isFileURL] && baseUrl && [self.webView respondsToSelector:@selector(loadFileURL:allowingReadAccessToURL:)]) {
-		[self.webView loadFileURL:request.URL allowingReadAccessToURL:baseUrl];
-	} else {
-		[self.webView loadRequest:request];
-	}
+
+	[fWebView loadRequest:request];
 
     if (false == loadImmediately)
     {
@@ -303,7 +297,7 @@ static CGFloat kAnimationDuration = 0.3;
 
 - (void)stopLoading
 {
-	[self.webView stopLoading];
+	[fWebView stopLoading];
 
 	UIActivityIndicatorView *indicator = [[fActivityView subviews] objectAtIndex:0];
 	[indicator stopAnimating];
@@ -311,11 +305,11 @@ static CGFloat kAnimationDuration = 0.3;
 
 - (BOOL)back
 {
-	BOOL result = self.webView.canGoBack;
+	BOOL result = fWebView.canGoBack;
 
 	if ( result )
 	{
-		[self.webView goBack];
+		[fWebView goBack];
 	}
 
 	return result;
@@ -323,11 +317,11 @@ static CGFloat kAnimationDuration = 0.3;
 
 - (BOOL)forward
 {
-	BOOL result = self.webView.canGoForward;
+	BOOL result = fWebView.canGoForward;
 
 	if ( result )
 	{
-		[self.webView goForward];
+		[fWebView goForward];
 	}
 
 	return result;
@@ -335,14 +329,14 @@ static CGFloat kAnimationDuration = 0.3;
 
 - (void)reload
 {
-	[self.webView reload];
+	[fWebView reload];
 }
 
 - (BOOL)bounces
 {
 	BOOL result = YES;
 
-	for ( id subview in self.webView.subviews )
+	for ( id subview in fWebView.subviews )
 	{
 		if ( [[subview class] isSubclassOfClass:[UIScrollView class]] )
 		{
@@ -356,7 +350,7 @@ static CGFloat kAnimationDuration = 0.3;
 
 - (void)setBounces:(BOOL)newValue
 {
-	for ( id subview in self.webView.subviews )
+	for ( id subview in fWebView.subviews )
 	{
 		if ( [[subview class] isSubclassOfClass:[UIScrollView class]] )
 		{
@@ -367,7 +361,7 @@ static CGFloat kAnimationDuration = 0.3;
 
 - (void)keyboardWasShown:(NSNotification*)aNotification
 {
-	if ( ! keyboardShown && [self.webView isFirstResponder] )
+	if ( ! keyboardShown && [fWebView isFirstResponder] )
 	{
 		NSDictionary* info = [aNotification userInfo];
 
@@ -376,7 +370,7 @@ static CGFloat kAnimationDuration = 0.3;
 		NSValue* aValue = [info objectForKey:UIKeyboardBoundsUserInfoKey];
 		CGSize keyboardSize = [aValue CGRectValue].size;
 
-		WKWebView *view = self.webView;
+		UIWebView *view = fWebView;
 
 		// Resize the scroll view (which is the root view of the window)
 		CGRect viewFrame = [view frame];
@@ -390,7 +384,7 @@ static CGFloat kAnimationDuration = 0.3;
 // Called when the UIKeyboardDidHideNotification is sent
 - (void)keyboardWasHidden:(NSNotification*)aNotification
 {
-	if ( [self.webView isFirstResponder] )
+	if ( [fWebView isFirstResponder] )
 	{
 		NSDictionary* info = [aNotification userInfo];
 	 
@@ -398,7 +392,7 @@ static CGFloat kAnimationDuration = 0.3;
 		NSValue* aValue = [info objectForKey:UIKeyboardBoundsUserInfoKey];
 		CGSize keyboardSize = [aValue CGRectValue].size;
 	 
-		WKWebView *view = self.webView;
+		UIWebView *view = fWebView;
 
 		// Reset the height of the scroll view to its original value
 		CGRect viewFrame = [view frame];
@@ -410,7 +404,7 @@ static CGFloat kAnimationDuration = 0.3;
 }
 
 Rtt::UrlRequestEvent::Type
-static EventTypeForNavigationType( WKNavigationType t )
+static EventTypeForNavigationType( UIWebViewNavigationType t )
 {
 	using namespace Rtt;
 
@@ -418,22 +412,22 @@ static EventTypeForNavigationType( WKNavigationType t )
 
 	switch ( t )
 	{
-		case WKNavigationTypeLinkActivated:
+		case UIWebViewNavigationTypeLinkClicked:
 			result = UrlRequestEvent::kLink;
 			break;
-		case WKNavigationTypeFormSubmitted:
+		case UIWebViewNavigationTypeFormSubmitted:
 			result = UrlRequestEvent::kForm;
 			break;
-		case WKNavigationTypeBackForward:
+		case UIWebViewNavigationTypeBackForward:
 			result = UrlRequestEvent::kHistory;
 			break;
-		case WKNavigationTypeReload:
+		case UIWebViewNavigationTypeReload:
 			result = UrlRequestEvent::kReload;
 			break;
-		case WKNavigationTypeFormResubmitted:
+		case UIWebViewNavigationTypeFormResubmitted:
 			result = UrlRequestEvent::kFormResubmitted;
 			break;
-		case WKNavigationTypeOther:
+		case UIWebViewNavigationTypeOther:
 			result = UrlRequestEvent::kOther;
 			break;
 		default:
@@ -442,15 +436,16 @@ static EventTypeForNavigationType( WKNavigationType t )
 
 	return result;
 }
-- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
 
+- (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType
+{
 	using namespace Rtt;
 
-	NSURL *url = navigationAction.request.URL;
+	NSURL *url = request.URL;
 
 	const char *urlString = [[url absoluteString] UTF8String];
 	
-	Rtt::UrlRequestEvent::Type navType = EventTypeForNavigationType( navigationAction.navigationType );
+	Rtt::UrlRequestEvent::Type navType = EventTypeForNavigationType( navigationType );
 	
 	UrlRequestEvent e( urlString, navType );
 	
@@ -463,16 +458,16 @@ static EventTypeForNavigationType( WKNavigationType t )
 		isLoading = true;
 	}
 	
-	decisionHandler(WKNavigationActionPolicyAllow); // Always load
+	return true; // Always load
 }
 
-- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation
+- (void)webViewDidStartLoad:(UIWebView *)webView
 {
 	UIActivityIndicatorView *indicator = [[fActivityView subviews] objectAtIndex:0];
 	[indicator startAnimating];
 }
 
-- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation
+- (void)webViewDidFinishLoad:(UIWebView *)webView
 {
 	using namespace Rtt;
 
@@ -482,14 +477,14 @@ static EventTypeForNavigationType( WKNavigationType t )
 
 		[self hideActivityViewIndicator];
 
-		NSURL *url = webView.URL;
+		NSURL *url = webView.request.URL;
 		const char *urlString = [[url absoluteString] UTF8String];
 		UrlRequestEvent e( urlString, UrlRequestEvent::kLoaded );
 		fOwner->DispatchEventWithTarget( e );
 	}
 }
 
-- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error
+- (void)webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error
 {
 	using namespace Rtt;
 
@@ -510,8 +505,8 @@ static EventTypeForNavigationType( WKNavigationType t )
 	UIActivityIndicatorView *indicator = [[fActivityView subviews] objectAtIndex:0];
 	[indicator stopAnimating];
 	
-	self.webView.hidden = NO;
-	self.webView.alpha = 1.0;
+	fWebView.hidden = NO;
+	fWebView.alpha = 1.0;
 	fActivityView.alpha = 1.0;
 	[UIView beginAnimations:nil context:nil];
 	[UIView setAnimationDuration:kAnimationDuration];
@@ -538,7 +533,7 @@ IPhoneWebViewObject::IPhoneWebViewObject( const Rect& bounds )
 
 IPhoneWebViewObject::~IPhoneWebViewObject()
 {
-	Rtt_iOSWebViewContainer *v = (Rtt_iOSWebViewContainer*)GetView();
+	Rtt_UIWebViewContainer *v = (Rtt_UIWebViewContainer*)GetView();
 	v.owner = NULL;
 }
 
@@ -558,7 +553,7 @@ IPhoneWebViewObject::Initialize()
 	Rect screenBounds;
 	GetScreenBounds( screenBounds );
 	CGRect r = CGRectMake( screenBounds.xMin, screenBounds.yMin, screenBounds.Width(), screenBounds.Height() );
-	Rtt_iOSWebViewContainer *v = [[Rtt_iOSWebViewContainer alloc] initWithFrame:r];
+	Rtt_UIWebViewContainer *v = [[Rtt_UIWebViewContainer alloc] initWithFrame:r];
 	v.owner = this;
 
 	UIView *parent = controller.view;
@@ -642,7 +637,7 @@ IPhoneWebViewObject::Request( lua_State *L )
 void
 IPhoneWebViewObject::Load( NSString *htmlBody, NSURL *baseUrl )
 {
-	Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)GetView();
+	Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)GetView();
 	[container loadHtmlString:htmlBody baseURL:baseUrl];
 }
 void
@@ -672,8 +667,8 @@ IPhoneWebViewObject::Request( NSString *urlString, NSURL *baseUrl )
 	{
 	}
 
-	Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)GetView();
-	[container loadRequest:request baseURL:baseUrl];
+	Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)GetView();
+	[container loadRequest:request];
 
 	[request release];
 }
@@ -686,7 +681,7 @@ IPhoneWebViewObject::Stop( lua_State *L )
 	if ( o )
 	{
 		UIView *view = o->GetView();
-		Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)view;
+		Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)view;
 		[container stopLoading];
 	}
 
@@ -703,7 +698,7 @@ IPhoneWebViewObject::Back( lua_State *L )
 	if ( o )
 	{
 		UIView *view = o->GetView();
-		Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)view;
+		Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)view;
 		result = [container back];
 	}
 
@@ -722,7 +717,7 @@ IPhoneWebViewObject::Forward( lua_State *L )
 	if ( o )
 	{
 		UIView *view = o->GetView();
-		Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)view;
+		Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)view;
 		result = [container forward];
 	}
 
@@ -747,7 +742,7 @@ IPhoneWebViewObject::Reload( lua_State *L )
 	if ( o )
 	{
 		UIView *view = o->GetView();
-		Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)view;
+		Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)view;
 		[container reload];
 	}
 
@@ -793,7 +788,7 @@ IPhoneWebViewObject::SetBackgroundColor( lua_State *L )
 		}
 
 		UIView *view = o->GetView();
-		Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)view;
+		Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)view;
 		container.webView.backgroundColor = color;
 		container.webView.opaque = hasBackground;
 	}
@@ -844,22 +839,22 @@ IPhoneWebViewObject::ValueForKey( lua_State *L, const char key[] ) const
 	}
 	else if ( strcmp( "bounces", key ) == 0 )
 	{
-		Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)GetView();
+		Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)GetView();
 		lua_pushboolean( L, [container bounces] );
 	}
 	else if ( strcmp( "canGoBack", key ) == 0 )
 	{
-		Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)GetView();
+		Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)GetView();
 		lua_pushboolean( L, container.webView.canGoBack );
 	}
 	else if ( strcmp( "canGoForward", key ) == 0 )
 	{
-		Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)GetView();
+		Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)GetView();
 		lua_pushboolean( L, container.webView.canGoForward );
 	}
 	else if ( strcmp( "hasBackground", key ) == 0 )
 	{
-		Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)GetView();
+		Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)GetView();
 		lua_pushboolean( L, container.webView.opaque );
 	}
 	else if ( strcmp( "load", key ) == 0 )
@@ -883,7 +878,7 @@ IPhoneWebViewObject::SetValueForKey( lua_State *L, const char key[], int valueIn
 
 	if ( strcmp( "hasBackground", key ) == 0 )
 	{
-		Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)GetView();
+		Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)GetView();
 
 		bool hasBackground = lua_toboolean( L, valueIndex );
 		UIColor *color = hasBackground ? [UIColor whiteColor] : [UIColor clearColor];
@@ -892,7 +887,7 @@ IPhoneWebViewObject::SetValueForKey( lua_State *L, const char key[], int valueIn
 	}
 	else if ( strcmp( "bounces", key ) == 0 )
 	{
-		Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)GetView();
+		Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)GetView();
 		[container setBounces:lua_toboolean( L, valueIndex )];
 	}
 	else if ( strcmp( "request", key ) == 0
@@ -915,40 +910,9 @@ IPhoneWebViewObject::SetValueForKey( lua_State *L, const char key[], int valueIn
 id
 IPhoneWebViewObject::GetNativeTarget() const
 {
-	Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)GetView();
+	Rtt_UIWebViewContainer *container = (Rtt_UIWebViewContainer*)GetView();
 	return container.webView;
 }
-
-int
-IPhoneWebViewObject::GetNativeProperty( lua_State *L, const char key[] ) const
-{
-	Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)GetView();
-	id target = container.webViewConfiguration;
-	int result = [target pushLuaValue:L forKey:@(key)];
-
-	if ( 0 == result )
-	{
-		result = Super::GetNativeProperty( L, key );
-	}
-
-	return result;
-}
-
-bool
-IPhoneWebViewObject::SetNativeProperty( lua_State *L, const char key[], int valueIndex )
-{
-	Rtt_iOSWebViewContainer *container = (Rtt_iOSWebViewContainer*)GetView();
-	id target = container.webViewConfiguration;
-	bool result = [target set:L luaValue:valueIndex forKey:@(key)];
-
-	if ( ! result )
-	{
-		result = Super::SetNativeProperty( L, key, valueIndex );
-	}
-
-	return result;
-}
-
 
 // ----------------------------------------------------------------------------
 

@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash
 #
 # Build the libimobiledevice (http://www.libimobiledevice.org/) suite for the Corona Simulator
 #

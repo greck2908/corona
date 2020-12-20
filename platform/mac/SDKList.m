@@ -1,9 +1,25 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
+// Copyright (C) 2018 Corona Labs Inc.
 // Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
@@ -140,7 +156,6 @@ NSString *const kSDKItemXcodeVersion = @"xcodeVersion";
 NSString *const kSDKItemCoronaVersion = @"coronaVersion";
 NSString *const kIosBeta = @"beta";
 NSString *const kIosFailMessage = @"failMessage";
-NSString *const kCustomTemplate = @"customTemplate";
 
 @interface SDKItem ()
 
@@ -155,7 +170,6 @@ NSString *const kCustomTemplate = @"customTemplate";
 @synthesize coronaVersion = _coronaVersion;
 @synthesize beta = _beta;
 @synthesize failMessage = _failMessage;
-@synthesize customTemplate = _customTemplate;
 
 + (instancetype)modelObjectWithDictionary:(NSDictionary *)dict
 {
@@ -175,7 +189,6 @@ NSString *const kCustomTemplate = @"customTemplate";
 		self.coronaVersion = [[self objectOrNilForKey:kSDKItemCoronaVersion fromDictionary:dict] doubleValue];
 		self.beta = [[self objectOrNilForKey:kIosBeta fromDictionary:dict] boolValue];
 		self.failMessage = [self objectOrNilForKey:kIosFailMessage fromDictionary:dict];
-		self.customTemplate = [self objectOrNilForKey:kCustomTemplate fromDictionary:dict];
 	}
 
 	return self;
@@ -190,7 +203,6 @@ NSString *const kCustomTemplate = @"customTemplate";
 	[mutableDict setValue:[NSNumber numberWithDouble:self.coronaVersion] forKey:kSDKItemCoronaVersion];
     [mutableDict setValue:[NSNumber numberWithBool:self.beta] forKey:kIosBeta];
 	[mutableDict setValue:self.failMessage forKey:kIosFailMessage];
-	[mutableDict setValue:self.customTemplate forKey:kCustomTemplate];
 
 	return [NSDictionary dictionaryWithDictionary:mutableDict];
 }
@@ -219,7 +231,6 @@ NSString *const kCustomTemplate = @"customTemplate";
 	self.coronaVersion = [aDecoder decodeDoubleForKey:kSDKItemCoronaVersion];
 	self.beta = [aDecoder decodeBoolForKey:kIosBeta];
 	self.failMessage = [aDecoder decodeObjectForKey:kIosFailMessage];
-	self.customTemplate = [aDecoder decodeObjectForKey:kCustomTemplate];
 
 	return self;
 }
@@ -232,7 +243,6 @@ NSString *const kCustomTemplate = @"customTemplate";
     [aCoder encodeDouble:_coronaVersion forKey:kSDKItemCoronaVersion];
 	[aCoder encodeBool:_beta forKey:kIosBeta];
 	[aCoder encodeObject:_failMessage forKey:kIosFailMessage];
-	[aCoder encodeObject:_customTemplate forKey:kCustomTemplate];
 }
 
 - (id)copyWithZone:(NSZone *)zone
@@ -247,7 +257,6 @@ NSString *const kCustomTemplate = @"customTemplate";
         copy.coronaVersion = self.coronaVersion;
 		copy.beta = self.beta;
 		copy.failMessage = [self.failMessage copyWithZone:zone];
-		copy.customTemplate = [self.customTemplate copyWithZone:zone];
     }
     
     return copy;
@@ -259,7 +268,6 @@ NSString *const kCustomTemplate = @"customTemplate";
     [_label release];
     [_xcodeVersion release];
 	[_failMessage release];
-	[_customTemplate release];
     [super dealloc];
 }
 

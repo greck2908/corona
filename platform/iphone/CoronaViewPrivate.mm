@@ -1,15 +1,32 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
+// Copyright (C) 2018 Corona Labs Inc.
 // Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
 #include "Core/Rtt_Build.h"
 
 #import <QuartzCore/QuartzCore.h>
+#import <OpenGLES/EAGLDrawable.h>
 #import <CoreLocation/CoreLocation.h>
 
 #import "CoronaViewPrivate.h"
@@ -58,7 +75,6 @@
 #import "Rtt_IPhoneTextFieldObject.h"
 
 #include "Rtt_KeyName.h"
-#include "Rtt_MetalAngleTypes.h"
 
 // ----------------------------------------------------------------------------
 
@@ -359,7 +375,7 @@ CoronaViewListenerAdapter( lua_State *L )
 	_gyroscopeObserver = (id< CoronaGyroscopeObserver >)_observerProxy;
 }
 
-- (id)initWithFrame:(CGRect)rect context:(Rtt_EAGLContext *)context
+- (id)initWithFrame:(CGRect)rect context:(EAGLContext *)context
 {
 	if ( (self = [super initWithFrame:rect context:context]) )
 	{
@@ -369,17 +385,15 @@ CoronaViewListenerAdapter( lua_State *L )
 	return self;
 }
 
-#ifndef Rtt_MetalANGLE
 - (id)initWithFrame:(CGRect)rect
 {
-	if ( self || (self = [self initWithFrame:rect context:nil]) )
-	{
+	if ( (self = [self initWithFrame:rect context:nil]) )
+	{		
 		[self initCommon];
 	}
 
 	return self;
 }
-#endif
 
 - (id)initWithCoder:(NSCoder *)aDecoder
 {
@@ -460,10 +474,10 @@ CoronaViewListenerAdapter( lua_State *L )
 	}
 }
 
-- (Rtt_GLKViewController *)viewController
+- (GLKViewController *)viewController
 {
 	Rtt_ASSERT( [self.delegate isKindOfClass:[UIViewController class]] );
-	return (Rtt_GLKViewController *)self.delegate;
+	return (GLKViewController *)self.delegate;
 }
 
 - (void)willBeginRunLoop:(NSDictionary *)params
@@ -539,6 +553,7 @@ CoronaViewListenerAdapter( lua_State *L )
 	if(!fMFiInputListener) {
 		AppleInputDeviceManager& inputDeviceManager = (AppleInputDeviceManager&)_runtime->Platform().GetDevice().GetInputDeviceManager();
 		fMFiInputListener = [[AppleInputMFiDeviceListener alloc] initWithRuntime:_runtime andDeviceManager:&inputDeviceManager];
+		[fMFiInputListener start];
 	}
 
 	// Check if already launched
@@ -555,7 +570,7 @@ CoronaViewListenerAdapter( lua_State *L )
 		// * LoadApplication()
 		// * BeginRunLoop()
 		// go to to the right place
-		[Rtt_EAGLContext setCurrentContext:self.context];
+		[EAGLContext setCurrentContext:self.context];
 		[self bindDrawable];
 
 		fLoadOrientation = orientation;
@@ -604,12 +619,11 @@ CoronaViewListenerAdapter( lua_State *L )
 	NSInteger result =_runtime->LoadApplication( loadParameters );
 	if ( result == (NSInteger)Runtime::kSuccess )
 	{
-		[fMFiInputListener start];
 		[self willBeginRunLoop:fParams];
 
 		_runtime->BeginRunLoop();
 		
-		//Forcing immediate blit (outside MGLKViewController which normally drives the display update)
+		//Forcing immediate blit (outside GlkViewController which normally drives the display update)
 		[self display];
 	}
 
@@ -744,14 +758,14 @@ CoronaViewListenerAdapter( lua_State *L )
 - (void)terminate
 {
 	//Grab the view's context
-	Rtt_EAGLContext *context = self.context;
+	EAGLContext *context = self.context;
 	
 	//Grab the active openGL context
-	Rtt_EAGLContext *openGlContext = [Rtt_EAGLContext currentContext];
+	EAGLContext *openGlContext = [EAGLContext currentContext];
 	
 	if ( openGlContext != context)
 	{
-		[Rtt_EAGLContext setCurrentContext:context];
+		[EAGLContext setCurrentContext:context];
 	}
 	
 	[self removeApplicationObserver];
@@ -781,7 +795,7 @@ CoronaViewListenerAdapter( lua_State *L )
 	_gyroscopeObserver = nil;
 	
 	//Restore the context
-	[Rtt_EAGLContext setCurrentContext:openGlContext];
+	[EAGLContext setCurrentContext:openGlContext];
 }
 
 - (id)sendEvent:(NSDictionary *)event
@@ -1265,7 +1279,7 @@ PrintTouches( NSSet *touches, const char *header )
 {
 
 	// Flush
-	Rtt_ASSERT( context == [Rtt_EAGLContext currentContext] );
+	Rtt_ASSERT( context == [EAGLContext currentContext] );
 
 	// This is a check to make sure the correct render buffer is bound.
 	// Normally, this wouldn't ever happen, but there's a check here in
@@ -1304,7 +1318,7 @@ PrintTouches( NSSet *touches, const char *header )
 
 	const UIDeviceOrientation orientation = [UIDevice currentDevice].orientation;
 
-	if ( orientation != UIDeviceOrientationUnknown && _runtime)
+	if ( orientation != UIDeviceOrientationUnknown )
 	{
 		Runtime *runtime = self.runtime;
 		const MPlatform& platform = runtime->Platform();

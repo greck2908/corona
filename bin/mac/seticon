@@ -18,7 +18,7 @@ fi
 # Folders are treated slightly differently
 if [ -d "$TARGET" ]
 then
-	printf -v TARGET "$TARGET/Icon\r"
+	TARGET="$TARGET/Icon"
 	FOLDER=YES
 fi
 
@@ -26,24 +26,14 @@ IMGEXTN=$(echo "$ICONIMG" | sed -e 's/.*\.\([a-zA-Z0-9]*\)/\1/')
 TMPDIR="/tmp"
 TMPICON="$TMPDIR/tmpicon-$$.$IMGEXTN"
 TMPRSRC="$TMPDIR/tmpicon-$$.rsrc"
-ICNSNAME="tmpicon-$$.icns"
-TMPICNS="$TMPDIR/$ICNSNAME"
 
 cp "$ICONIMG" "$TMPICON"
 
 # Take an image and make the image its own icon:
-ADDICON_WORKED=$(sips -i "$TMPICON" 2>&1 | grep 'addIcon is no longer supported')
+sips -i "$TMPICON"
 
-if [ -z "$ADDICON_WORKED" ]; then
-	# Extract the icon to its own resource file:
-	xcrun DeRez -only icns "$TMPICON" > "$TMPRSRC"
-else
-	ICNS_WORKED=$(sips -s format icns "$ICONIMG" --out "$TMPICNS" 2>&1 | grep Error)
-	if [ ! -z "$ICNS_WORKED" ]; then
-		sips -z 512 512 -s format icns "$ICONIMG" --out "$TMPICNS"
-	fi
-	echo "read 'icns' (-16455) \"$ICNSNAME\";" > "$TMPRSRC"
-fi
+# Extract the icon to its own resource file:
+xcrun DeRez -only icns "$TMPICON" > "$TMPRSRC"
 
 # Append this resource to the file you want to icon-ize
 xcrun Rez -append "$TMPRSRC" -o "$TARGET"
@@ -61,4 +51,4 @@ fi
 
 
 # Clean up
-rm -f "$TMPICON" "$TMPRSRC" "$TMPICNS"
+rm -f "$TMPICON" "$TMPRSRC"

@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash #-x
 
 CUSTOM_ID=$1
 S3_BUCKET=$2

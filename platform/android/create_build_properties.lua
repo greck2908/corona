@@ -90,7 +90,6 @@ local function infuseStringsWithGoogleServicesJson(android, srcDir, package)
 	addString("google_api_key", client, {"api_key", 1, "current_key"})
 	addString("google_crash_reporting_api_key", client, {"api_key", 1, "current_key"})
 	addString("google_storage_bucket", gs, {"project_info", "storage_bucket"})
-	addString("project_id", gs, {"project_info", "project_id"})
 
 end
 
@@ -98,7 +97,7 @@ end
 
 -- Creates a "build.properties" file with the given settings and the "build.settings" file.
 -- Returns nil if succeeded. Returns an error message string if there was a failure.
-function androidCreateProperties(destinationDirectory, packageName, projectDirectory, versionCode, versionName, targetedAppStore, appName)
+function androidCreateProperties(destinationDirectory, packageName, projectDirectory, versionCode, versionName, targetedAppStore)
 	local json = require("json")
 	local lfs = require('lfs')
 	local errorMessage = nil
@@ -146,7 +145,6 @@ function androidCreateProperties(destinationDirectory, packageName, projectDirec
 	buildProperties.versionCode = versionCode
 	buildProperties.versionName = versionName
 	buildProperties.targetedAppStore = targetedAppStore
-	buildProperties.appName = appName
 	if type(settings) == "table" then
 		buildProperties.buildSettings = settings
 
@@ -204,8 +202,6 @@ function androidCreateProperties(destinationDirectory, packageName, projectDirec
 			".*/**",
 			"._*",
 			"build.properties",
-			"AndroidResources/**",
-			"AndroidResources",
 		}
 
 	if settings and settings.excludeFiles then
@@ -252,7 +248,7 @@ if arg then
 	end
 
 	-- Create the "build.properties" file.
-	local errorMessage = androidCreateProperties(arg[1], arg[2], arg[3], arg[4], arg[5], arg[6], arg[7])
+	local errorMessage = androidCreateProperties(arg[1], arg[2], arg[3], arg[4], arg[5], arg[6])
 	if errorMessage then
 		local logMessage = 'ERROR: Failed to create the "build.properties" file. '
 		if ("string" == type(errorMessage)) and (string.len(errorMessage) > 0) then

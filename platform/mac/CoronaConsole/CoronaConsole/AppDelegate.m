@@ -1,41 +1,53 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
+// Copyright (C) 2018 Corona Labs Inc.
 // Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
 #import "AppDelegate.h"
 #import "ConsoleWindowController.h"
 
-
-static void NotificationCallback(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo)
+static void SignalHandler(int signal)
 {
-	AppDelegate *appDelegate = (__bridge AppDelegate*)observer;
-	if(!appDelegate || !name)
-	{
-		return;
-	}
-	else if(CFStringCompare(name, CFSTR("CoronaConsole.bringToFront"), 0) == kCFCompareEqualTo)
-	{
-		[appDelegate bringToFront];
-		CFNotificationCenterPostNotification( CFNotificationCenterGetDistributedCenter(), CFSTR("CoronaSimulator.bringToFront"), NULL, NULL, YES);
+	// When we receive a SIGHUP, move ourselves to the top of the window order
+	// (we need this because the interfaces Cocoa supplies (like [NSRunningApplication activateWithOptions:])
+	// all affect the activation state of the app and we don't want to activate just to show the window)
+	// Needs to be dispatched on the main thread because it's doing UI stuff
+	dispatch_async(dispatch_get_main_queue(), ^{
+		AppDelegate *appDelegate = (AppDelegate*)[NSApp delegate];
 
-	}
-	else if(CFStringCompare(name, CFSTR("CoronaConsole.clearConsole"), 0) == kCFCompareEqualTo)
-	{
-		[appDelegate clearConsole];
-	}
+		[appDelegate bringToFront];
+	});
 }
+
 
 @implementation AppDelegate
 
 - (void)applicationWillFinishLaunching:(NSNotification *)aNotification
 {
-	CFNotificationCenterAddObserver(CFNotificationCenterGetDistributedCenter(), (__bridge const void *)(self), NotificationCallback, CFSTR("CoronaConsole.clearConsole"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
-	CFNotificationCenterAddObserver(CFNotificationCenterGetDistributedCenter(), (__bridge const void*)(self), NotificationCallback, CFSTR("CoronaConsole.bringToFront"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+	// Catch SIGHUP (see handler above)
+	struct sigaction action = { 0 };
+	action.sa_handler = SignalHandler;
+	sigaction(SIGHUP, &action, NULL);
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification
@@ -77,7 +89,7 @@ static void NotificationCallback(CFNotificationCenterRef center, void *observer,
 
 - (void)applicationWillTerminate:(NSNotification *)aNotification
 {
-	CFNotificationCenterRemoveObserver(CFNotificationCenterGetDistributedCenter(), (__bridge const void *)(self), NULL, NULL);
+	// Insert code here to tear down your application
 }
 
 - (IBAction)performFindAction:(id)action
@@ -88,11 +100,6 @@ static void NotificationCallback(CFNotificationCenterRef center, void *observer,
 - (IBAction)clearConsole:(id)sender
 {
 	[[ConsoleWindowController sharedConsole] clearLog:sender];
-}
-
--(void) clearConsole
-{
-	[self clearConsole:nil];
 }
 
 - (IBAction)gotoEndOfConsole:(id)sender

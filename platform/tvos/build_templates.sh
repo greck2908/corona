@@ -13,8 +13,6 @@ checkError() {
 
 PLATFORM_BASE=appletv
 
-: "${TEMPLATE_TARGET:=template}"
-TEMPLATE_TARGET_SUFFIX="${TEMPLATE_TARGET#template}"
 
 # Passed in arguments
 # $1 SDK_VERSION
@@ -34,7 +32,7 @@ else
 fi
 
 
-path="$(cd "$(dirname "$0")"; pwd)"
+path=$(dirname "$0")
 
 # Summarize xcodebuild output to stdout but save full output in separate file
 XCODE_LOG_FILTERS="^    export |clang -x |libtool -static |^    cd $path"
@@ -54,7 +52,7 @@ SDK_SIMULATOR=${PLATFORM_BASE}simulator
 # -----------------------------------------------------------------------------
 
 rm -rf "${BUILD_DIR}"
-xcodebuild SYMROOT="$path/build" -project "${path}"/ratatouille.xcodeproj -configuration Release clean 2>&1 | tee -a "$FULL_LOG_FILE" | egrep -v "$XCODE_LOG_FILTERS"
+xcodebuild -project "${path}"/ratatouille.xcodeproj -configuration Release clean 2>&1 | tee -a "$FULL_LOG_FILE" | egrep -v "$XCODE_LOG_FILTERS"
 
 
 # Directories
@@ -79,34 +77,38 @@ export SUPPRESS_APP_SIGN=1
 export SUPPRESS_GUI=1
 
 # template device
+TARGET=template
 
-xcodebuild SYMROOT="$path/build" OTHER_CFLAGS="-fembed-bitcode" -project "${path}"/ratatouille.xcodeproj -target ${TEMPLATE_TARGET} -configuration Release -sdk ${SDK_DEVICE} 2>&1 | tee -a "$FULL_LOG_FILE" | egrep -v "$XCODE_LOG_FILTERS"
+xcodebuild OTHER_CFLAGS="-fembed-bitcode" -project "${path}"/ratatouille.xcodeproj -target ${TARGET} -configuration Release -sdk ${SDK_DEVICE} 2>&1 | tee -a "$FULL_LOG_FILE" | egrep -v "$XCODE_LOG_FILTERS"
 checkError
 
-mv -v "${BUILD_DIR}/Release-${SDK_DEVICE}/template.app" "${BUILD_DIR}/template/${SDK_DEVICE}/${SDK_VERSION}/template.app"
+mv -v "${BUILD_DIR}/Release-${SDK_DEVICE}/${TARGET}.app" "${BUILD_DIR}/template/${SDK_DEVICE}/${SDK_VERSION}/${TARGET}.app"
 checkError
 
-mv -v "${BUILD_DIR}/Release-${SDK_DEVICE}/template.app.dSYM" "${BUILD_DIR}/template-dSYM/${SDK_DEVICE}/${SDK_VERSION}/template.app.dSYM"
+mv -v "${BUILD_DIR}/Release-${SDK_DEVICE}/${TARGET}.app.dSYM" "${BUILD_DIR}/template-dSYM/${SDK_DEVICE}/${SDK_VERSION}/${TARGET}.app.dSYM"
 checkError
 
 # template simulator
+TARGET=template
 
-xcodebuild SYMROOT="$path/build" -project "${path}"/ratatouille.xcodeproj -target ${TEMPLATE_TARGET} -configuration Release -sdk ${SDK_SIMULATOR} 2>&1 | tee -a "$FULL_LOG_FILE" | egrep -v "$XCODE_LOG_FILTERS"
+xcodebuild -project "${path}"/ratatouille.xcodeproj -target ${TARGET} -configuration Release -sdk ${SDK_SIMULATOR} 2>&1 | tee -a "$FULL_LOG_FILE" | egrep -v "$XCODE_LOG_FILTERS"
 checkError
 
-mv -v "${BUILD_DIR}/Release-${SDK_SIMULATOR}/template.app" "${BUILD_DIR}/template/${SDK_SIMULATOR}/${SDK_VERSION}/template.app"
+mv -v "${BUILD_DIR}/Release-${SDK_SIMULATOR}/${TARGET}.app" "${BUILD_DIR}/template/${SDK_SIMULATOR}/${SDK_VERSION}/${TARGET}.app"
 checkError
 
-mv -v "${BUILD_DIR}/Release-${SDK_SIMULATOR}/template.app.dSYM" "${BUILD_DIR}/template-dSYM/${SDK_SIMULATOR}/${SDK_VERSION}/template.app.dSYM"
+mv -v "${BUILD_DIR}/Release-${SDK_SIMULATOR}/${TARGET}.app.dSYM" "${BUILD_DIR}/template-dSYM/${SDK_SIMULATOR}/${SDK_VERSION}/${TARGET}.app.dSYM"
 checkError
 
 # ${JOB_NAME} is a Jenkins environment var
 if [[ "${JOB_NAME}" =~ .*Enterprise.* ]]
 then
 	# CoronaCards.framework
+	TARGET=CoronaCards.framework
+
 	# NOTE: No need to do clean, since we already did a clean build in the above xcodebuild 
 	# invocations. This xcodebuild will finish nearly instantaneously.
-	xcodebuild SYMROOT="$path/build" OTHER_CFLAGS="-fembed-bitcode" -project "${path}"/ratatouille.xcodeproj -target CoronaCards.framework -configuration Release 2>&1 | tee -a "$FULL_LOG_FILE" | egrep -v "$XCODE_LOG_FILTERS"
+	xcodebuild OTHER_CFLAGS="-fembed-bitcode" -project "${path}"/ratatouille.xcodeproj -target ${TARGET} -configuration Release 2>&1 | tee -a "$FULL_LOG_FILE" | egrep -v "$XCODE_LOG_FILTERS"
 	checkError
 fi
 

@@ -503,6 +503,12 @@ PLATFORM_FILES := \
 	$(CORONA_ROOT)/platform/android/ndk/AndroidOperationResult.cpp \
 	$(CORONA_ROOT)/platform/android/ndk/AndroidZipFileEntry.cpp \
 
+LIBRSA_FILES := \
+	$(CORONA_ROOT)/external/rsa/prime.cpp \
+	$(CORONA_ROOT)/external/rsa/rsa.cpp \
+	$(CORONA_ROOT)/external/rsa/vlong.cpp \
+	$(CORONA_ROOT)/external/rsa/vlong_io.cpp \
+
 LIBLUASOCKET_FILES := \
 	$(LUASOCKET_DIR)/src/auxiliar.c \
 	$(LUASOCKET_DIR)/src/compat.c \
@@ -543,7 +549,9 @@ LIBRTT_FILES := \
 	$(CORONA_ROOT)/librtt/Core/Rtt_FixedBlockAllocator.cpp \
 	$(CORONA_ROOT)/librtt/Core/Rtt_FixedMath.c \
 	$(CORONA_ROOT)/librtt/Core/Rtt_Geometry.cpp \
+	$(CORONA_ROOT)/librtt/Core/Rtt_MD4.c \
 	$(CORONA_ROOT)/librtt/Core/Rtt_Math.c \
+	$(CORONA_ROOT)/librtt/Core/Rtt_MessageDigest.cpp \
 	$(CORONA_ROOT)/librtt/Core/Rtt_OperationResult.cpp \
 	$(CORONA_ROOT)/librtt/Core/Rtt_RefCount.cpp \
 	$(CORONA_ROOT)/librtt/Core/Rtt_ResourceHandle.cpp \
@@ -689,6 +697,7 @@ LIBRTT_FILES := \
 	$(CORONA_ROOT)/librtt/Rtt_LuaTableIterator.cpp \
 	$(CORONA_ROOT)/librtt/Rtt_LuaUserdataProxy.cpp \
 	$(CORONA_ROOT)/librtt/Rtt_Matrix.cpp \
+	$(CORONA_ROOT)/librtt/Rtt_Message.cpp \
 	$(CORONA_ROOT)/librtt/Rtt_ParticleSystemObject.cpp \
 	$(CORONA_ROOT)/librtt/Rtt_PhysicsContact.cpp \
 	$(CORONA_ROOT)/librtt/Rtt_PhysicsContactListener.cpp \
@@ -725,6 +734,7 @@ LIBRTT_FILES := \
 	$(CORONA_ROOT)/librtt/Rtt_RuntimeDelegatePlayer.cpp \
 	$(CORONA_ROOT)/librtt/Rtt_Scheduler.cpp \
 	$(CORONA_ROOT)/librtt/Rtt_Transform.cpp \
+	$(CORONA_ROOT)/librtt/Rtt_Verifier.cpp \
 	$(CORONA_ROOT)/platform/android/ndk/generated/CoronaLibrary.cpp \
 	$(CORONA_ROOT)/platform/android/ndk/generated/CoronaPrototype.cpp \
 	$(CORONA_ROOT)/platform/android/ndk/generated/CoronaProvider.cpp \
@@ -1006,6 +1016,7 @@ LOCAL_SRC_FILES := \
 	$(LIBLPEG_FILES) \
 	$(LIBLUAFILESYSTEM_FILES) \
     $(LIBSQLITE_FILES) \
+    $(LIBRSA_FILES) \
     $(LIBPNG_FILES) \
     $(LIBB2SEPARATORCPP_FILES) \
     $(LIBSMOOTHPOLYGON_FILES) \

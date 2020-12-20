@@ -1,16 +1,30 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
+// Copyright (C) 2018 Corona Labs Inc.
 // Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
 package com.ansca.corona.notifications;
 
-
-import android.content.pm.ApplicationInfo;
 
 /**
  * Provides thread safe methods for posting and managing notifications.
@@ -31,6 +45,7 @@ public final class NotificationServices extends com.ansca.corona.ApplicationCont
 	 * Used to uniquely identify notifications when posting them so that they will not
 	 * conflict with 3rd party library status bar notifications.
 	 */
+	private static final String DEFAULT_STATUS_BAR_TAG = "corona";
 	private static final String DEFAULT_CHANNEL_ID = "com.coronalabs.defaultChannel";
 
 
@@ -484,7 +499,7 @@ public final class NotificationServices extends com.ansca.corona.ApplicationCont
 					android.app.NotificationManager notificationManager;
 					String serviceName = android.content.Context.NOTIFICATION_SERVICE;
 					notificationManager = (android.app.NotificationManager)context.getSystemService(serviceName);
-					notificationManager.notify(statusBarSettings.getId(), notification);
+					notificationManager.notify(DEFAULT_STATUS_BAR_TAG, statusBarSettings.getId(), notification);
 				}
 			}
 			catch (Exception ex) {
@@ -571,7 +586,7 @@ public final class NotificationServices extends com.ansca.corona.ApplicationCont
 					android.app.NotificationManager notificationManager;
 					String serviceName = android.content.Context.NOTIFICATION_SERVICE;
 					notificationManager = (android.app.NotificationManager)context.getSystemService(serviceName);
-					notificationManager.cancel(settings.getId());
+					notificationManager.cancel(DEFAULT_STATUS_BAR_TAG, settings.getId());
 				}
 			}
 			catch (Exception ex) {
@@ -1072,23 +1087,14 @@ public final class NotificationServices extends com.ansca.corona.ApplicationCont
 				String serviceName = android.content.Context.NOTIFICATION_SERVICE;
 				android.app.NotificationManager notificationManager;
 				notificationManager = (android.app.NotificationManager)context.getSystemService(serviceName);
-				android.app.NotificationChannel mChannel;
-				ApplicationInfo applicationInfo = context.getApplicationInfo();
-				int stringId = applicationInfo.labelRes;
-				String applicationName = stringId == 0 ? applicationInfo.nonLocalizedLabel.toString() : context.getString(stringId);
-
 				try {
-					mChannel = notificationManager.getNotificationChannel(DEFAULT_CHANNEL_ID);
-					if (mChannel == null)
+					if (notificationManager.getNotificationChannel(DEFAULT_CHANNEL_ID) == null)
 						throw new Exception();
 				} catch (Exception e) {
-					mChannel = new android.app.NotificationChannel(DEFAULT_CHANNEL_ID, applicationName, android.app.NotificationManager.IMPORTANCE_DEFAULT);
+					android.app.NotificationChannel mChannel = new android.app.NotificationChannel(DEFAULT_CHANNEL_ID, DEFAULT_STATUS_BAR_TAG, android.app.NotificationManager.IMPORTANCE_DEFAULT);
 					mChannel.setDescription("Default notification channel");
 					mChannel.enableLights(true);
 					notificationManager.createNotificationChannel(mChannel);
-				}
-				if(!applicationName.equals(mChannel.getName())) {
-					mChannel.setName(applicationName);
 				}
 				builder.setChannelId(DEFAULT_CHANNEL_ID);
 			}

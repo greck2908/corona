@@ -18,16 +18,16 @@ package com.google.android.vending.licensing;
 
 import com.ansca.corona.CoronaEnvironment;
 
+import org.apache.http.NameValuePair;
+import org.apache.http.client.utils.URLEncodedUtils;
+
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
 
 import java.net.URI;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.io.UnsupportedEncodingException;
+import java.net.URISyntaxException;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -113,6 +113,7 @@ public abstract class Policy {
      * 
      * @param index the index of the URL to fetch. This value will be either
      *            MAIN_FILE_URL_INDEX or PATCH_FILE_URL_INDEX
+     * @param URL the URL to set
      */
     public String getExpansionURL(int index) {
         if (index < mExpansionURLs.size()) {
@@ -178,32 +179,22 @@ public abstract class Policy {
     protected Map<String, String> decodeExtras(String extras) {
         Map<String, String> results = new HashMap<String, String>();
         try {
-            Map<String, String> extraList = splitQuery(extras);
-            for (Map.Entry<String, String> entry : extraList.entrySet())
-            {
-                String name = entry.getKey();
+            URI rawExtras = new URI("?" + extras);
+            List<NameValuePair> extraList = URLEncodedUtils.parse(rawExtras, "UTF-8");
+            for (NameValuePair item : extraList) {
+                String name = item.getName();
                 int i = 0;
                 while (results.containsKey(name)) {
-                    name = entry.getKey() + ++i;
+                    name = item.getName() + ++i;
                 }
-                results.put(name, entry.getValue());
+                results.put(name, item.getValue());
             }
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
+        } catch (URISyntaxException e) {
+            Log.w("Policy", "Invalid syntax error while decoding extras data from server.");
         }
         return results;
     }
-    
-    public static Map<String, String> splitQuery(String query) throws UnsupportedEncodingException {
-        Map<String, String> query_pairs = new LinkedHashMap<String, String>();
-        String[] pairs = query.split("&");
-        for (String pair : pairs) {
-            int idx = pair.indexOf("=");
-            query_pairs.put(URLDecoder.decode(pair.substring(0, idx), "UTF-8"), URLDecoder.decode(pair.substring(idx + 1), "UTF-8"));
-        }
-        return query_pairs;
-    }
-    
+
     //This is used when we get a valid response from the server.  We will want to clear the saved expansion file names in case they're not needed anymore.
     protected void clearSavedExpansionFiles() {
         SharedPreferences sp = CoronaEnvironment.getApplicationContext().getSharedPreferences(EXPANSION_FILE_PREFS, Context.MODE_PRIVATE);

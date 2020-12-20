@@ -1,1 +1,0 @@
-../mac/lua2c.sh

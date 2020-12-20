@@ -19,7 +19,7 @@ if [ ! -e "$TOOLCHAIN_DIR/lua" ]; then
     exit -1
 fi
 
-DST_DIR="${TARGET_TEMP_DIR}/${CURRENT_ARCH}"
+DST_DIR=$DERIVED_FILE_DIR
 if [ ! -d "$DST_DIR" ]; then		
     mkdir "$DST_DIR"
 fi

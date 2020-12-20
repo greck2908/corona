@@ -1,9 +1,25 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
+// Copyright (C) 2018 Corona Labs Inc.
 // Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
@@ -1391,45 +1407,6 @@ LuaLineObjectProxyVTable::setStrokeColor( lua_State *L )
 	return 0;
 }
 
-static Paint*
-DefaultPaint( lua_State *L, bool isBytes )
-{
-	lua_pushnumber( L, 1.0 ); // gray value, i.e. white
-
-	Paint* p = LuaLibDisplay::LuaNewColor( L, lua_gettop( L ), isBytes );
-
-	lua_pop( L, 1 );
-
-	return p;
-}
-
-int
-LuaLineObjectProxyVTable::setStrokeVertexColor( lua_State *L )
-{
-	LineObject* o = (LineObject*)LuaProxy::GetProxyableObject( L, 1 );
-
-	Rtt_WARN_SIM_PROXY_TYPE( L, 1, LineObject );
-
-	if ( o )
-	{
-		OpenPath& path = o->GetPath();
-		if ( ! path.GetStroke() )
-		{
-			o->SetStroke( DefaultPaint( L, o->IsByteColorRange() ) );
-		}
-
-		U32 index = lua_tointeger( L, 2 ) - 1U;
-		Color c = LuaLibDisplay::toColor( L, 3, o->IsByteColorRange() );
-
-		if (path.SetStrokeVertexColor( index, c ))
-		{
-			path.GetObserver()->Invalidate( DisplayObject::kGeometryFlag | DisplayObject::kColorFlag );
-		}
-	}
-
-	return 0;
-}
-
 // object.stroke
 int
 LuaLineObjectProxyVTable::setStroke( lua_State *L )
@@ -1502,11 +1479,9 @@ LuaLineObjectProxyVTable::ValueForKey( lua_State *L, const MLuaProxyable& object
 		"strokeWidth",		// 6
 		"stroke",			// 7
 		"anchorSegments",	// 8
-		"setStrokeVertexColor", // 9
-		"strokeVertexCount",	// 10
 	};
     const int numKeys = sizeof( keys ) / sizeof( const char * );
-	static StringHash sHash( *LuaContext::GetAllocator( L ), keys, numKeys, 11, 2, 2, __FILE__, __LINE__ );
+	static StringHash sHash( *LuaContext::GetAllocator( L ), keys, numKeys, 9, 30, 4, __FILE__, __LINE__ );
 	StringHash *hash = &sHash;
 
 	int index = hash->Lookup( key );
@@ -1580,17 +1555,6 @@ LuaLineObjectProxyVTable::ValueForKey( lua_State *L, const MLuaProxyable& object
 			result = 1;
 		}
         break;
-	case 9:
-		{
-			Lua::PushCachedFunction( L, Self::setStrokeVertexColor );
-		}
-		break;
-	case 10:
-		{
-			const LineObject& o = static_cast< const LineObject& >( object );
-			lua_pushinteger( L, o.GetPath().GetStrokeVertexCount() );
-		}
-		break;
 
 	default:
 		{
@@ -1636,11 +1600,9 @@ LuaLineObjectProxyVTable::SetValueForKey( lua_State *L, MLuaProxyable& object, c
 		"strokeWidth",		// 6
 		"stroke",			// 7
 		"anchorSegments",	// 8
-		"strokeVertexCount",	// 9
-		"setStrokeVertexColor",	// 10
 	};
     const int numKeys = sizeof( keys ) / sizeof( const char * );
-	static StringHash sHash( *LuaContext::GetAllocator( L ), keys, numKeys, 11, 2, 2, __FILE__, __LINE__ );
+	static StringHash sHash( *LuaContext::GetAllocator( L ), keys, numKeys, 9, 10, 2, __FILE__, __LINE__ );
 	StringHash *hash = &sHash;
 
 	int index = hash->Lookup( key );
@@ -1650,7 +1612,6 @@ LuaLineObjectProxyVTable::SetValueForKey( lua_State *L, MLuaProxyable& object, c
 	case 1:
 	case 2:
 	case 3:
-	case 10:
 		// No-op: cannot set property for method
 		break;
 	case 4:
@@ -1693,9 +1654,6 @@ LuaLineObjectProxyVTable::SetValueForKey( lua_State *L, MLuaProxyable& object, c
 			setAnchorSegments( L, valueIndex );
 		}
        break;
-	case 9:
-		// No-op: cannot set vertex count
-		break;
 	default:
 		{
 			result = Super::SetValueForKey( L, object, key, valueIndex );
@@ -1840,60 +1798,6 @@ LuaShapeObjectProxyVTable::setStroke( lua_State *L, int valueIndex )
 }
 
 int
-LuaShapeObjectProxyVTable::setFillVertexColor( lua_State *L )
-{
-	ShapeObject* o = (ShapeObject*)LuaProxy::GetProxyableObject( L, 1 );
-
-	Rtt_WARN_SIM_PROXY_TYPE( L, 1, ShapeObject );
-
-	if ( o )
-	{
-		ShapePath& path = static_cast< ShapePath& >( o->GetPath() );
-		if ( ! path.GetFill() )
-		{
-			o->SetFill( DefaultPaint( L, o->IsByteColorRange() ) );
-		}
-
-		U32 index = lua_tointeger( L, 2 ) - 1U;
-		Color c = LuaLibDisplay::toColor( L, 3, o->IsByteColorRange() );
-
-		if (path.SetFillVertexColor( index, c ))
-		{
-			path.GetObserver()->Invalidate( DisplayObject::kGeometryFlag | DisplayObject::kColorFlag );
-		}
-	}
-
-	return 0;
-}
-
-int
-LuaShapeObjectProxyVTable::setStrokeVertexColor( lua_State *L )
-{
-	ShapeObject* o = (ShapeObject*)LuaProxy::GetProxyableObject( L, 1 );
-
-	Rtt_WARN_SIM_PROXY_TYPE( L, 1, ShapeObject );
-
-	if ( o )
-	{
-		ShapePath& path = static_cast< ShapePath& >( o->GetPath() );
-		if ( ! path.GetStroke() )
-		{
-			o->SetStroke( DefaultPaint( L, o->IsByteColorRange() ) );
-		}
-
-		U32 index = lua_tointeger( L, 2 ) - 1U;
-		Color c = LuaLibDisplay::toColor( L, 3, o->IsByteColorRange() );
-
-		if (path.SetStrokeVertexColor( index, c ))
-		{
-			path.GetObserver()->Invalidate( DisplayObject::kGeometryFlag | DisplayObject::kColorFlag );
-		}
-	}
-
-	return 0;
-}
-
-int
 LuaShapeObjectProxyVTable::ValueForKey( lua_State *L, const MLuaProxyable& object, const char key[], bool overrideRestriction /* = false */ ) const
 {
 	if ( ! key ) { return 0; }
@@ -1910,13 +1814,9 @@ LuaShapeObjectProxyVTable::ValueForKey( lua_State *L, const MLuaProxyable& objec
 		"setStrokeColor",	// 5
 		"strokeWidth",		// 6
 		"innerstrokeWidth",	// 7
-		"setFillVertexColor",	// 8
-		"fillVertexCount",		// 9
-		"setStrokeVertexColor", // 10
-		"strokeVertexCount",	// 11
 	};
     const int numKeys = sizeof( keys ) / sizeof( const char * );
-	static StringHash sHash( *LuaContext::GetAllocator( L ), keys, numKeys, 12, 11, 2, __FILE__, __LINE__ );
+	static StringHash sHash( *LuaContext::GetAllocator( L ), keys, numKeys, 8, 26, 2, __FILE__, __LINE__ );
 	StringHash *hash = &sHash;
 	int index = hash->Lookup( key );
 
@@ -2008,26 +1908,6 @@ LuaShapeObjectProxyVTable::ValueForKey( lua_State *L, const MLuaProxyable& objec
 	case 7:
 		{
 			lua_pushinteger( L, o.GetInnerStrokeWidth() );		
-		}
-		break;
-	case 8:
-		{
-			Lua::PushCachedFunction( L, Self::setFillVertexColor );
-		}
-		break;
-	case 9:
-		{
-			lua_pushinteger( L, static_cast< const ShapePath& >( o.GetPath() ).GetFillVertexCount() );
-		}
-		break;
-	case 10:
-		{
-			Lua::PushCachedFunction( L, Self::setStrokeVertexColor );
-		}
-		break;
-	case 11:
-		{
-			lua_pushinteger( L, static_cast< const ShapePath& >( o.GetPath() ).GetStrokeVertexCount() );
 		}
 		break;
 	default:
@@ -3690,7 +3570,7 @@ LuaGroupObjectProxyVTable::Insert( lua_State *L, GroupObject *parent )
 		{
 			GroupObject* oldParent = child->GetParent();
 
-			// Display an error if they're indexing beyond the array (bug http://bugs.coronalabs.com/?18838 )
+			// Display an error if they're indexing beyond the array (bug http://bugs.anscamobile.com/?18838 )
 			const S32 maxIndex = parent->NumChildren();
 			if ( index > maxIndex || index < 0 )
 			{
@@ -4879,9 +4759,15 @@ LuaSpriteObjectProxyVTable::SetValueForKey( lua_State *L, MLuaProxyable& object,
 		"numFrames",	// 2
 		"isPlaying",	// 3
 		"sequence",		// 4
+
+		// Methods
+		"play",			// 5
+		"pause",		// 6
+		"setSequence",	// 7
+		"setFrame",		// 8
 	};
 	static const int numKeys = sizeof( keys ) / sizeof( const char * );
-	static StringHash sHash( *LuaContext::GetAllocator( L ), keys, numKeys, 5, 1, 1, __FILE__, __LINE__ );
+	static StringHash sHash( *LuaContext::GetAllocator( L ), keys, numKeys, 9, 0, 7, __FILE__, __LINE__ );
 	StringHash *hash = &sHash;
 
 	int index = hash->Lookup( key );
@@ -4911,6 +4797,10 @@ LuaSpriteObjectProxyVTable::SetValueForKey( lua_State *L, MLuaProxyable& object,
 	case 2:
 	case 3:
 	case 4:
+	case 5:
+	case 6:
+	case 7:
+	case 8:
 		{
 			// Read-only properties
 			// no-op

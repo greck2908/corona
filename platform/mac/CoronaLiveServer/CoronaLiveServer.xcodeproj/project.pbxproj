@@ -166,7 +166,6 @@
 			developmentRegion = English;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				English,
 				en,
 				Base,
 			);
@@ -268,7 +267,7 @@
 					/usr/local/include,
 					/usr/local/opt/openssl/include/,
 				);
-				MACOSX_DEPLOYMENT_TARGET = 10.9;
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -318,7 +317,7 @@
 					/usr/local/include,
 					/usr/local/opt/openssl/include/,
 				);
-				MACOSX_DEPLOYMENT_TARGET = 10.9;
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 			};
@@ -337,6 +336,7 @@
 					"$(PROJECT_DIR)/../../../external/live-libs/mac/lib/",
 					"$(SDKROOT)/usr/lib/system",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 10.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.coronalabs.CoronaLiveServer;
 				PRODUCT_NAME = "Corona Live Server";
 			};
@@ -355,6 +355,7 @@
 					"$(PROJECT_DIR)/../../../external/live-libs/mac/lib/",
 					"$(SDKROOT)/usr/lib/system",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 10.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.coronalabs.CoronaLiveServer;
 				PRODUCT_NAME = "Corona Live Server";
 			};

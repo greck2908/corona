@@ -1,9 +1,25 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
+// Copyright (C) 2018 Corona Labs Inc.
 // Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
@@ -25,7 +41,7 @@
 #import <UIKit/UIGeometry.h>
 #import <UIKit/UIScreen.h>
 #import <UIKit/UIView.h>
-#import <WebKit/WebKit.h>
+#import <UIKit/UIWebView.h>
 #import <UIKit/UIWindow.h>
 
 // ----------------------------------------------------------------------------
@@ -54,10 +70,10 @@ RectToCGRect( const Rtt::Rect& bounds, CGRect * outRect )
 }
 
 // Callback/Notification glue code
-@interface IPhoneWebView : NSObject< WKNavigationDelegate >
+@interface IPhoneWebView : NSObject< UIWebViewDelegate >
 {
 	Rtt::IPhoneWebPopup *owner;
-	WKWebView *fWebView;
+	UIWebView *fWebView;
 	NSURL *fLoadingURL;
 	UIView *fActivityView;
 	BOOL isOpen;
@@ -67,14 +83,14 @@ RectToCGRect( const Rtt::Rect& bounds, CGRect * outRect )
 	CGRect initialBounds;
 }
 
-@property(nonatomic,readonly,getter=webView) WKWebView *fWebView;
+@property(nonatomic,readonly,getter=webView) UIWebView *fWebView;
 @property(nonatomic,readonly) BOOL isOpen;
 
 - (id)initWithOwner:(Rtt::IPhoneWebPopup*)popup;
 - (void)addObservers;
 - (void)removeObservers;
 
-- (void)openWithRequest:(NSURLRequest*)request  baseURL:(NSURL*)baseUrl;;
+- (void)openWithRequest:(NSURLRequest*)request;
 
 - (void)close;
 - (void)finishClose;
@@ -137,9 +153,9 @@ RectToCGRect( const Rtt::Rect& bounds, CGRect * outRect )
 {
 	if ( ( ! fWebView ) )
 	{
-		fWebView = [[WKWebView alloc] initWithFrame:CGRectZero];
-		fWebView.navigationDelegate = self;
-//		fWebView.scalesPageToFit = YES;
+		fWebView = [[UIWebView alloc] initWithFrame:CGRectZero];
+		fWebView.delegate = self;
+		fWebView.scalesPageToFit = YES;
 	}
 }
 
@@ -178,18 +194,14 @@ RectToCGRect( const Rtt::Rect& bounds, CGRect * outRect )
 {
 }
 
-- (void)openWithRequest:(NSURLRequest*)request baseURL:(NSURL*)baseUrl
+- (void)openWithRequest:(NSURLRequest*)request
 {
 	[self initView];
 
 	[fLoadingURL release];
 	fLoadingURL = [request.URL retain];
 
-	if([fLoadingURL isFileURL] && baseUrl && [fWebView respondsToSelector:@selector(loadFileURL:allowingReadAccessToURL:)]) {
-		[fWebView loadFileURL:fLoadingURL allowingReadAccessToURL:baseUrl];
-	} else {
-		[fWebView loadRequest:request];
-	}
+	[fWebView loadRequest:request];
 	isLoading = YES;
 
 	if ( ! isOpen )
@@ -308,7 +320,7 @@ RectToCGRect( const Rtt::Rect& bounds, CGRect * outRect )
 		NSValue* aValue = [info objectForKey:UIKeyboardBoundsUserInfoKey];
 		CGSize keyboardSize = [aValue CGRectValue].size;
 
-		WKWebView *view = fWebView;
+		UIWebView *view = fWebView;
 
 		// Resize the scroll view (which is the root view of the window)
 		CGRect viewFrame = [view frame];
@@ -334,7 +346,7 @@ RectToCGRect( const Rtt::Rect& bounds, CGRect * outRect )
 		NSValue* aValue = [info objectForKey:UIKeyboardBoundsUserInfoKey];
 		CGSize keyboardSize = [aValue CGRectValue].size;
 	 
-		WKWebView *view = fWebView;
+		UIWebView *view = fWebView;
 
 		// Reset the height of the scroll view to its original value
 		CGRect viewFrame = [view frame];
@@ -457,24 +469,32 @@ RectToCGRect( const Rtt::Rect& bounds, CGRect * outRect )
 
 #endif
 
-- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
-	NSURL *url = navigationAction.request.URL;
+- (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType
+{
+	NSURL *url = request.URL;
+
+	// Only invoke callback if the requested url is different from the url
+	// passed to the web popup for loading originally
 	BOOL result = [fLoadingURL isEqual:url] || owner->ShouldLoadUrl( [[url absoluteString] UTF8String] );
+
 	if ( ! result )
 	{
 		// Stop listening b/c listener requested popup to close
 		owner->SetCallback( NULL );
 		[self close];
 	}
-	decisionHandler(result?WKNavigationActionPolicyAllow:WKNavigationActionPolicyCancel);
+
+	return result;
 }
 
-- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation {
+- (void)webViewDidStartLoad:(UIWebView *)webView
+{
 	UIActivityIndicatorView *indicator = [[fActivityView subviews] objectAtIndex:0];
 	[indicator startAnimating];
 }
 
-- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+- (void)webViewDidFinishLoad:(UIWebView *)webView
+{
 	if ( isLoading )
 	{
 		isLoading = NO;
@@ -494,7 +514,8 @@ RectToCGRect( const Rtt::Rect& bounds, CGRect * outRect )
 	}
 }
 
-- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+- (void)webView:(UIWebView *)webView didFailLoadWithError:(NSError *)error
+{
 	isLoading = NO;
 
 	if ( ! owner->DidFailLoadUrl( [[[error userInfo] valueForKey:NSURLErrorFailingURLStringErrorKey] UTF8String], [[error localizedDescription] UTF8String], (int)[error code] ) )
@@ -586,7 +607,7 @@ IPhoneWebPopup::Show( const MPlatform& platform, const char *url )
 		: [[NSURL alloc] initWithString:urlString];
 	NSMutableURLRequest *request = [[NSMutableURLRequest alloc] initWithURL:u];
 	[u release];
-	[baseUrl autorelease];
+	[baseUrl release];
 
 	[request setHTTPMethod:fMethod];
 	if ( NSOrderedSame == [fMethod caseInsensitiveCompare:@"POST"] )
@@ -606,7 +627,7 @@ IPhoneWebPopup::Show( const MPlatform& platform, const char *url )
 	{
 	}
 
-	[fWebView openWithRequest:request baseURL:baseUrl];
+	[fWebView openWithRequest:request];
 
 	[request release];
 }
@@ -617,7 +638,7 @@ IPhoneWebPopup::Close()
 	bool didClose = fWebView.isOpen;
 
 	// Cancel any pending loads
-	WKWebView *view = fWebView.webView;
+	UIWebView *view = fWebView.webView;
 	[view stopLoading];
 
 	[fWebView close];

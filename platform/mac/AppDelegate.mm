@@ -1,9 +1,25 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Solar2D game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
-// Contact: support@solar2d.com
+// Copyright (C) 2018 Corona Labs Inc.
+// Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
@@ -15,7 +31,6 @@
 #include "Core/Rtt_Build.h"
 
 #import "AppDelegate.h"
-#include <stdlib.h>
 
 #if (MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_5)
 	#import <Foundation/NSAutoreleasePool.h>
@@ -80,6 +95,9 @@
 #include "Rtt_VersionTimestamp.h"
 #include "Rtt_String.h"
 
+#include "Rtt_Verifier.h" // temporary
+
+#include "Rtt_WebServicesSession.h"
 #import "BuildSessionState.h" // holds the WebServicesSession object for build now.
 
 #import "GLView.h"
@@ -103,10 +121,14 @@
 	#import "OSXAppBuildController.h"
 	#import "TVOSAppBuildController.h"
 
+	#include "Rtt_PlatformConnection.h"
 	#include "Rtt_PlatformDictionaryWrapper.h"
 
 	#import "AppleSigningIdentityController.h"
 
+	#include "Rtt_Authorization.h"
+	#include "Rtt_AuthorizationTicket.h"
+	#include "Rtt_MacAuthorizationDelegate.h"
 	#include "Rtt_TargetDevice.h"
 
 	#include "ListKeyStore.h"
@@ -121,8 +143,6 @@
 	#import "ValidationSupportMacUI.h"
 	#import "SDKList.h"
 #endif // Rtt_PROJECTOR
-
-#include "Rtt_MacDialogController.h"
 
 // -------------------------
 
@@ -254,7 +274,7 @@ static const int       kClearProjectSandboxMenuTag = 1001;
 
 NSString *kosVersionMinimum = @"10.9";   // we refuse to run on OSes older than this
 NSString *kosVersionPrevious = @"10.12";  // should be updated as Apple releases new OSes
-NSString *kosVersionCurrent = @"11.1";  // should be updated as Apple releases new OSes; we will run on this one and the previous one
+NSString *kosVersionCurrent = @"10.14";  // should be updated as Apple releases new OSes; we will run on this one and the previous one
 
 // These tags are defined on the various DeviceBuild dialogs in Interface Builder
 enum {
@@ -585,15 +605,11 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 @synthesize applicationHasBeenInitialized;
 @synthesize launchedWithFile;
 @synthesize allowLuaExit;
+@synthesize fAuthorizer;
 @synthesize fHomeScreen;
 @synthesize _locationManager;
 @synthesize _currentLocation;
 @synthesize fAnalytics;
-
-+(BOOL)offlineModeAllowed {
-	static BOOL allowed = [[NSUserDefaults standardUserDefaults] boolForKey:@"allowOfflineMode"];
-	return allowed;
-}
 
 -(id)init
 {
@@ -645,6 +661,8 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 		fLinuxAppBuildController = nil;
 
 		fServices = NULL;
+		fAuthorizerDelegate = NULL;
+		fAuthorizer = NULL;
 
         fSimulatorWasSuspended = FALSE;
 		_stopRequested = NO;
@@ -682,6 +700,84 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 
 #if !defined( Rtt_PROJECTOR )
 
+// -----------------------------------------------------------------------------
+
+#ifdef Rtt_CHECK_FOR_UPDATES
+// We no longer do this; the server always returns a negative result
+
+static const char*
+CheckForUpdate( const Rtt::MacPlatformServices& services, const Rtt::AuthorizationTicket& ticket, time_t timeBetweenChecks )
+{
+	using namespace Rtt;
+
+	const char *result = NULL;
+
+	const char kLastUpdateCheck[] = "LastUpdateCheck";
+	
+	Rtt::String lastUpdateCheck;
+	services.GetPreference( kLastUpdateCheck, &lastUpdateCheck );
+	time_t t = lastUpdateCheck.GetString() ? strtoul( lastUpdateCheck.GetString(), NULL, 16 ) : 0; Rtt_ASSERT( LONG_MAX != t );
+	time_t current = time( NULL );
+
+	if ( current >= ( timeBetweenChecks + t ) )
+	{
+		// Check for Updates
+		const char *deviceId = services.Platform().GetDevice().GetUniqueIdentifier( MPlatformDevice::kDeviceIdentifier );
+		if ( Rtt_VERIFY( deviceId ) )
+		{
+			char timestamp[32];
+			sprintf( timestamp, "%x", (unsigned int) Rtt_VersionTimestamp() );
+
+			const char *username = ticket.GetUsername();
+
+			Rtt::String encryptedUsername;
+			Authorization::Encrypt( username, &encryptedUsername );
+
+			char expiration[32];
+			sprintf( expiration, "%x", (unsigned int) ticket.GetExpiration() );
+
+			KeyValuePair params[] =
+			{
+				{ "deviceId", deviceId, kStringValueType },
+				{ "timestamp", timestamp, kStringValueType },
+				{ "encryptedUser", encryptedUsername.GetString(), kStringValueType },
+				{ "expiration", expiration, kStringValueType },
+				{ "product", (void*)AuthorizationTicket::kCoronaSDK, kIntegerValueType },
+				{ "platform", (void*)AuthorizationTicket::kMacPlatform, kIntegerValueType }
+			};
+
+			PlatformDictionaryWrapper *response = WebServicesSession::Call(
+				 services,
+				 WebServicesSession::CoronaServerUrl(services),
+				 "corona.update2",
+				 params,
+				 sizeof( params ) / sizeof( params[0] ) );
+
+			if ( response )
+			{
+				const char *r = response->ValueForKey( "result" );
+				if ( 0 != strcmp( r, "kCoronaUpdateNoneAvailable" ) )
+				{
+					result = r;
+				}
+
+				sprintf( timestamp, "%x", (unsigned int) current );
+				services.SetPreference( kLastUpdateCheck, timestamp );
+
+				Rtt_DELETE( response );
+			}
+		}
+	}
+
+	return result;
+}
+#endif // Rtt_CHECK_FOR_UPDATES
+
+- (BOOL) isDailyBuild
+{
+    // The second test has the effect of making developer "test builds" behave like Daily Builds which is generally desirable
+    return (! Rtt::PlatformAppPackager::IsAppSettingsEmpty( * fConsolePlatform )) || (Rtt_BUILD_REVISION == 9999);
+}
 
 -(void)coronaInit:(NSNotification*)aNotification
 {
@@ -689,7 +785,7 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
     {
         [[NSUserDefaults standardUserDefaults] setBool:NO forKey:kUserPreferenceDoNotUseSkinnedWindows];
 
-		NSRunAlertPanel( @"Solar2D Simulator - Deprecated Preference", @"The \"Display device border\" preference is no longer used.  Borderless devices can be chosen in the Window/View As menu instead.", nil, nil, nil );
+		NSRunAlertPanel( @"Corona Simulator - Deprecated Preference", @"The \"Display device border\" preference is no longer used.  Borderless devices can be chosen in the Window/View As menu instead.", nil, nil, nil );
     }
     
     // Find the application support directory and the user's Skins directory within it
@@ -712,16 +808,20 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
     }
     
     // User skins are a Pro feature
-	dirEnum = [localFileManager enumeratorAtPath:userSkinsDir];
-	while ((file = [dirEnum nextObject]))
-	{
-		if ([[file pathExtension] isEqualToString: @"lua"])
-		{
-			NSString *luaPath = [userSkinsDir stringByAppendingPathComponent:file];
-			
-			[skinPathStrs addObject:luaPath];
-		}
-	}
+    if ([self isProSubscription])
+    {
+        // Now add the user's skins
+        dirEnum = [localFileManager enumeratorAtPath:userSkinsDir];
+        while ((file = [dirEnum nextObject]))
+        {
+            if ([[file pathExtension] isEqualToString: @"lua"])
+            {
+                NSString *luaPath = [userSkinsDir stringByAppendingPathComponent:file];
+                
+                [skinPathStrs addObject:luaPath];
+            }
+        }
+    }
     
     // Put the skins into a data structure we can share with core code
     char **skinPaths;
@@ -752,6 +852,81 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
         
         free(skinPaths);
     }
+}
+
+-(void)signin
+{
+	using namespace Rtt;
+	
+	authorizedToLaunch = NO;
+	
+	while ( ! authorizedToLaunch )
+	{
+		Authorization& authorizer = * fAuthorizer;
+		const AuthorizationTicket *ticket = authorizer.GetTicket();
+        int lastUid = (ticket == NULL ? -1 : ticket->GetUid());
+        
+        // When run from an IDE we always seem to end up buried in the window order so goose us a bit
+        [[NSRunningApplication currentApplication] activateWithOptions:(NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps)];
+
+		if ( ! authorizer.Initialize(true) )
+		{
+			NSRunAlertPanel( @"Could not authorize this computer to use Corona Simulator", @"An Internet connection is required to authorize first time use.", nil, nil, nil );
+			
+			[[NSApplication sharedApplication] terminate:self];
+			
+			return;
+		}
+
+        ticket = authorizer.GetTicket();
+      
+		if ( ! authorizer.VerifyTicket() )
+		{
+			NSRunAlertPanel( @"Could not launch Corona Simulator", @"Invalid registration.", nil, nil, nil );
+			
+			// Make sure we ask for the username and password next time through
+			authorizer.ClearTicket();
+			
+			authorizedToLaunch = NO; // [[NSApplication sharedApplication] terminate:self];
+			
+			continue;
+		}
+
+#ifdef Rtt_CHECK_FOR_UPDATES
+        // We no longer do this; the server always returns a negative result
+
+		const int kDaysBetweenUpdate = 7;
+		const time_t kTimeBetweenUpdates = kDaysBetweenUpdate * 24 * 60 * 60;
+		const char *updateUrl = CheckForUpdate( *fServices, *ticket, kTimeBetweenUpdates );
+		if ( updateUrl )
+		{
+			// Alert user of update
+			NSInteger code = NSRunAlertPanel(
+				@"An update for Corona is available.",
+				@"Press Download to obtain the latest update and quit this application.", @"Download", @"Remind Me Later", nil );
+
+			if ( NSAlertDefaultReturn == code )
+			{
+				fServices->Platform().OpenURL( updateUrl );
+				
+				[NSApp terminate:self];
+			}
+		}
+#endif // Rtt_CHECK_FOR_UPDATES
+        
+		authorizedToLaunch = YES;
+        
+        int currentUid = (ticket == NULL ? -1 : ticket->GetUid());
+
+        // If the uid has changed tell analytics
+        if (currentUid != -1 && currentUid != lastUid)
+        {
+            fAnalytics->BeginSession(currentUid);
+        }
+	}
+     
+    // Some IDEs will terminate us quite abruptly so make sure we're on disk
+    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 // -----------------------------------------------------------------------------
@@ -964,14 +1139,17 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
     }
     
     // If they're a "Pro" user they can define a custom device
-	[viewAsMenu insertItem:[NSMenuItem separatorItem] atIndex:viewAsItemCount];
-	++viewAsItemCount;
-	
-	NSMenuItem *newItem = [viewAsMenu insertItemWithTitle:@"Custom Device..."
-												   action:@selector(showCustomDevice:)
-											keyEquivalent:@""
-												  atIndex:viewAsItemCount];
-	[newItem setTag:kCustomDeviceMenuTag];
+    if ([self isProSubscription])
+    {
+        [viewAsMenu insertItem:[NSMenuItem separatorItem] atIndex:viewAsItemCount];
+        ++viewAsItemCount;
+        
+        NSMenuItem *newItem = [viewAsMenu insertItemWithTitle:@"Custom Device..."
+                                                       action:@selector(showCustomDevice:)
+                                                keyEquivalent:@""
+                                                      atIndex:viewAsItemCount];
+        [newItem setTag:kCustomDeviceMenuTag];
+    }
     
     // Make sure the current skin is checked
     [self updateMenuForSkinChange];
@@ -1028,8 +1206,55 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 	// Use Key-Value-Observing (KVO) to listen for changes to properties
 	[self addObserver:self forKeyPath:@"fSkin" options:NSKeyValueObservingOptionNew context:NULL];
 	
-
+	using namespace Rtt;
 	
+	fAuthorizer->Initialize(false);
+	const AuthorizationTicket *ticket = [self ticket];
+	
+    fAuthorizer->SetLoginMessage("You need to login to use the Simulator for the first time.\n\n"
+                                 "Please sign in using your Corona account information or press 'Register' and go to the website to register.");
+	
+	[self signin];
+	
+    ticket = [self ticket];
+
+	// Initialize simulator analytics
+	Rtt::String suppressFeedback;
+	fServices->GetPreference( Authorization::kSuppressFeedbackKey, &suppressFeedback );
+	
+	if ( ticket != NULL )
+	{
+#if 0
+		// For now, at least, record all user's analytics (it's a free product, after all)
+		// TODO: at some point remove the inactive checkbox from the preferences dialog
+
+		// Only current paid subscribers can opt-out
+		if ( ticket->IsSubscriptionCurrent() )
+		{
+#ifndef Rtt_DEBUG
+			fAnalytics->SetParticipating( ! suppressFeedback.GetString() );
+#endif
+		}
+#endif
+
+		fAnalytics->Initialize( AuthorizationTicket::StringForSubscription( ticket->GetSubscription() ),
+							    ticket->GetUid() );
+        
+        fAnalytics->BeginSession(ticket->GetUid());
+	}
+	else
+	{
+		fAnalytics->Initialize( NULL, 0 );
+        
+        fAnalytics->BeginSession(0);
+	}
+
+	const char *sub = (ticket == NULL ? "none" : AuthorizationTicket::DisplayStringForSubscription( ticket->GetSubscription() ));
+	static std::map<std::string, std::string> keyValues;
+	keyValues = {{"build-type", ([self isDailyBuild] ? "daily" : "release")}, {"subscription", sub}};
+
+	fAnalytics->Log("authorized", keyValues);
+
     [self loadExtensionMenu];
 
     NSMenu *appMenu = [[NSApplication sharedApplication] mainMenu];
@@ -1076,6 +1301,9 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
     // Calling this makes the Welcome window fail to appear (the subsequent call seems to work without it)
     //[[NSProcessInfo processInfo] setAutomaticTerminationSupportEnabled:YES];
     [[NSProcessInfo processInfo] disableSuddenTermination];
+
+	// Bring the console to the foreground when we start so it doesn't end up behind Finder windows
+	[self consoleMenuitem:nil];
 }
 
 //
@@ -1108,7 +1336,7 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
     NSMenu *appMenu = [[NSApplication sharedApplication] mainMenu];
     NSMenuItem *windowMenuItem = [appMenu itemWithTitle:kWindowMenuItemName];
     NSMenu *windowMenu = [windowMenuItem submenu];
-    long welcomeItemIdx = [windowMenu indexOfItemWithTitle:@"Welcome to Solar2D"];
+    long welcomeItemIdx = [windowMenu indexOfItemWithTitle:@"Welcome to Corona"];
 
     if (welcomeItemIdx == -1)
     {
@@ -1321,7 +1549,7 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
     NSMenu *appMenu = [[NSApplication sharedApplication] mainMenu];
     NSMenuItem *windowMenuItem = [appMenu itemWithTitle:kWindowMenuItemName];
     NSMenu *windowMenu = [windowMenuItem submenu];
-    long welcomeItemIdx = [windowMenu indexOfItemWithTitle:@"Welcome to Solar2D"];
+    long welcomeItemIdx = [windowMenu indexOfItemWithTitle:@"Welcome to Corona"];
     
     if (welcomeItemIdx == -1)
     {
@@ -1375,22 +1603,17 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 // I believe this is generally safe enough because awakeFromNib gets called before applicationWillFinishLaunching.
 -(void)applicationWillFinishLaunching:(NSNotification*)aNotification
 {
+	// Set up the ticket subsystem
 	fServices = new Rtt::MacPlatformServices( *fConsolePlatform );
+	fAuthorizerDelegate = new Rtt::MacAuthorizationDelegate;
+	fAuthorizer = new Rtt::Authorization( * fServices, * fAuthorizerDelegate );
 	fNextUpsellTime = 0;
-	NSString* v = [[NSUserDefaults standardUserDefaults] stringForKey:@"debugBuildProcess"];
-	if(v) {
-		setenv("DEBUG_BUILD_PROCESS", [v UTF8String], 0);
-	}
 
 	[self checkOpenGLRequirements];
+#if !defined( Rtt_PROJECTOR )
 	[self coronaInit:aNotification];
-	
-#ifdef Rtt_AUTHORING_SIMULATOR
-	NSString *jhome = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"Contents/jre/jdk/Contents/Home"];
-	if([[NSFileManager defaultManager] fileExistsAtPath:jhome]) {
-		setenv("JAVA_HOME", [jhome UTF8String], YES);
-	}
-#endif
+	authorizedToLaunch = NO;
+#endif // Rtt_PROJECTOR
 }
 
 - (void) startDebugAndOpenPanel
@@ -1418,6 +1641,16 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 	bool runScriptOnly = false;
 	NSString* scriptPath = nil;
 
+	const Rtt::AuthorizationTicket *ticket = [self ticket];
+	
+	if (ticket == NULL)
+	{
+		fOptions.isEnterprise = NO;
+	}
+	else
+	{
+		fOptions.isEnterprise = ticket->GetSubscription() == Rtt::AuthorizationTicket::kEnterpriseNativeExtensionsSubscription;
+	}
 
 	// Invoke as a projector. Therefore, we only allow pre-compiled scripts.
 	// 
@@ -1480,7 +1713,7 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 			}
 			else
 			{
-				Rtt_TRACE_SIM( ( "Error: Requested -project file (%s) is not a valid Solar2D path/file\n", [projectpath UTF8String] ) );
+				Rtt_TRACE_SIM( ( "Error: Requested -project file (%s) is not a valid Corona path/file\n", [projectpath UTF8String] ) );
 			}
 		}
 	}
@@ -1597,6 +1830,9 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
     [[NSUserDefaults standardUserDefaults] setBool:fOpenLastProject forKey:kOpenLastProjectOnSimulatorLaunch];
     [[NSUserDefaults standardUserDefaults] synchronize];
 
+	delete fAuthorizer;
+	delete fAuthorizerDelegate;
+
 	delete fServices;
 	[fPreferencesWindow release];
 	[fCustomDeviceWindow release];
@@ -1623,9 +1859,61 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 {
 }
 
+#if !defined( Rtt_PROJECTOR )
+
+static bool
+IsAppAllowedToRun( const Rtt::AuthorizationTicket* t )
+{
+	return t && t->IsAppAllowedToRun();
+}
+
+-(BOOL)isRunnable
+{
+	const Rtt::AuthorizationTicket *ticket = [self ticket];
+	return IsAppAllowedToRun( ticket );
+}
+
+#endif // Rtt_PROJECTOR
+
+
 -(BOOL)isRelaunchable
 {
     return self.fAppPath != nil;
+}
+
+-(const Rtt::AuthorizationTicket*)ticket
+{
+#if !defined( Rtt_PROJECTOR )
+	
+	if ( fAuthorizer && fAuthorizer->Initialize(false) )
+	{
+		return fAuthorizer->GetTicket();
+	}
+	else
+	{
+		return NULL;
+	}
+	
+#else
+	return NULL;
+#endif
+
+}
+
+-(BOOL)isSubscriptionCurrent
+{
+#if !defined( Rtt_PROJECTOR )
+	const Rtt::AuthorizationTicket *ticket = [self ticket];
+	return ( ticket ? ticket->IsSubscriptionCurrent() : NO );
+#else
+	return NULL;
+#endif
+}
+
+-(BOOL)isProSubscription
+{
+	// All subscriptions are pro now
+	return YES;
 }
 
 // This is used by the Main Menu to control enabling of things like the zoom in/out menu items
@@ -1819,13 +2107,93 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
     [fCustomDeviceWindow close];
 }
 
+// Currently does not update, but not a big deal because we force the app to shut down on change
+- (NSString*) preferencesUserName
+{	
+	using namespace Rtt;
+	
+	const Rtt::AuthorizationTicket* ticket = [self ticket];
+	if ( NULL == ticket )
+	{
+		return nil;
+	}
+	
+	const char* label = ticket->GetUsername();
+	if ( NULL != label )
+	{
+		return [NSString stringWithExternalString:label];
+	}
+	else
+	{
+		return nil;
+	}
+}
+
+-(void)deauthorize:(id)sender
+{
+	using namespace Rtt;
+
+	// Check internet connection
+	MacPlatformServices services( * fConsolePlatform );
+	MacAuthorizationDelegate delegate;
+	Authorization authorizer( services, delegate );
+	const Rtt::AuthorizationTicket *ticket = [self ticket];
+
+	ticket = [self ticket];
+	
+	// If we're connected to the internet, try to deauth this computer with the server so we don't burn one
+	// of their (many) authorization slots.  We don't bug the user if this doesn't work.
+	if ( services.IsInternetAvailable() )
+	{
+		const char *usr = ticket->GetUsername();
+		Rtt::String encryptedPassword;
+
+		services.GetPreference( usr, &encryptedPassword );
+
+		if ( encryptedPassword.GetString() )
+		{
+			Rtt::String ticketData;
+			services.GetPreference( Authorization::kTicketKey, &ticketData );
+
+			[self beginProgressSheet:fPreferencesWindow];
+			authorizer.Deauthorize( usr, encryptedPassword.GetString(), ticketData.GetString() );
+			[self endProgressSheet];
+		}
+	}
+
+	// Unset the saved ticket preferences so a login is forced next time the client is started
+	services.SetPreference( Authorization::kTicketKey, NULL );
+	services.SetPreference( Authorization::kSuppressFeedbackKey, NULL );
+	services.SetPreference( Authorization::kUsernameKey, NULL );
+
+	if (ticket != NULL)
+	{
+		services.SetPreference( ticket->GetUsername(), NULL );
+	}
+
+    // Some IDEs will terminate us quite abruptly so make sure we're on disk
+    [[NSUserDefaults standardUserDefaults] synchronize];
+
+
+	[fPreferencesWindow close];
+	fAnalytics->Log("deauthorize", "result", "success");
+	NSAlert *alert = [NSAlert alertWithMessageText:@"You have successfully deauthorized this computer."
+									 defaultButton:@"Quit"
+								   alternateButton:nil otherButton:nil
+						 informativeTextWithFormat:@"This application will now quit."];
+	[alert runModal];
+
+	// Terminate app
+	[[NSApplication sharedApplication] terminate:self];
+}
+
 -(IBAction)deauthorizeConfirm:(id)sender
 {
 	NSAlert* alert = [[[NSAlert alloc] init] autorelease];
 	[alert addButtonWithTitle:@"Deauthorize and Quit"];
 	[alert addButtonWithTitle:@"Cancel"];
 	[alert setMessageText:@"Are you sure you want to continue?"];
-	[alert setInformativeText:@"This will close the Solar2D Simulator and you will have to log in again next time you use it."];
+	[alert setInformativeText:@"This will close the Corona Simulator and you will have to log in again next time you use it."];
 	[alert setAlertStyle:NSWarningAlertStyle];
 	[alert beginSheetModalForWindow:fPreferencesWindow
 			modalDelegate:self
@@ -2014,7 +2382,7 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 		[self closeWelcomeWindow];
 
 		// There is an inital state condition where we need to make sure the skin checkmarks have been checked.
-		// This is mostly hit the very first time Solar2D is run since there is no previous skin and
+		// This is mostly hit the very first time Corona is run since there is no previous skin and
 		// the default skin was setup before KVO was setup (in init) so we need to force a menu update.
 		[self updateMenuForSkinChange];
 
@@ -2113,6 +2481,13 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 // Delegate callback that is triggered when the user selects an "Open Recent"
 - (BOOL) application:(NSApplication*)theApplication openFile:(NSString*)filepath
 {
+    fAuthorizer->SetLoginMessage("You need to login to use the Simulator for the first time.\n\n"
+                                 "Please sign in using your Corona account information or press 'Register' and go to the website to register.");
+	
+	[self signin];
+
+    fAnalytics->Log("open-recent", NULL);
+
 	// This block will be run before applicationDidFinishLaunching if a file is passed in via command line
 	// or if a file is double clicked.
 	// This messes up initialization assumptions and the command line processing.
@@ -2121,6 +2496,14 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 	if(NO == self.applicationHasBeenInitialized)
 	{
 		self.launchedWithFile = YES;
+	}
+
+	// If the user has not agreed to the license terms or some other critera,
+	// we can't let this method bypass the normal startup routine.
+	if( NO == authorizedToLaunch )
+	{
+		// return YES to prevent any dialog errors
+		return YES;
 	}
 	
 	BOOL isDirectory = YES;
@@ -2136,7 +2519,7 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 
 	if (YES == isDirectory)
 	{
-		// In theory, we should just pass to runApp, but passing an empty directory seems to lead to Solar2D quiting.
+		// In theory, we should just pass to runApp, but passing an empty directory seems to lead to Corona quiting.
 		NSString* mainScriptFile = [NSString stringWithExternalString:Rtt_LUA_SCRIPT_FILE( "main" )];
 		NSString* fullpath = [filepath stringByAppendingPathComponent:mainScriptFile]; 
 		if( ! [[NSFileManager defaultManager] fileExistsAtPath:fullpath] )
@@ -2316,7 +2699,7 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 		
         [alert setMessageText:NSLocalizedString(@"Unknown URL Scheme", @"Unknown URL Scheme")];
         [alert setInformativeText:[NSString stringWithFormat:NSLocalizedString(
-			@"This version of Solar2D does not support \"%@\""
+			@"This version of Corona does not support \"%@\""
 			@" in its URL scheme.",
 			@"Unknown URL Scheme"),
 			[url host]]];
@@ -2626,10 +3009,6 @@ Rtt_EXPORT const luaL_Reg* Rtt_GetCustomModulesList()
 -(IBAction)launchSimulator:(id)sender
 {
 	using namespace Rtt;
-	if([[NSUserDefaults standardUserDefaults] boolForKey:@"clearConsoleOnRelaunch"])
-	{
-		[self clearConsole];
-	}
 
 	// Detect relaunch
 	if ( fSimulator )
@@ -2947,26 +3326,65 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 #if !defined( Rtt_PROJECTOR )
 
 // -----------------------------------------------------------------------------
--(BOOL)isRunnable
-{
-	return YES;
-}
 
 -(BOOL)isBuildAvailable
 {
-	bool result = (fAppPath != nil) && (fSimulator != nil);
+	const Rtt::AuthorizationTicket *ticket = [self ticket];
+	bool result = IsAppAllowedToRun( ticket );
+
+	#ifdef Rtt_LITTLE_ENDIAN
+		result &= true;
+	#else
+		result &= false;
+	#endif
+
+	if ( result )
+	{
+		result &= (fAppPath != nil) && (fSimulator != nil);
+	}
+	
 	return result;
 }
 
 // TODO: Is this duplicate of isBuildAvailable?  If so remove...
 -(BOOL)isAndroidBuildAvailable
 {
-	return [self isBuildAvailable];
+	const Rtt::AuthorizationTicket *ticket = [self ticket];
+	bool result = IsAppAllowedToRun( ticket );
+
+	#ifdef Rtt_LITTLE_ENDIAN
+		result &= true;
+	#else
+		result &= false;
+	#endif
+	
+	if ( result )
+	{
+		result &= (fAppPath != nil) && (fSimulator != nil);
+	}
+	
+	return result;
 }
 
 -(BOOL)isAllowedToBuild:(Rtt::TargetDevice::Platform)platform
 {
-	return [self isBuildAvailable];
+	using namespace Rtt;
+
+	const AuthorizationTicket *ticket = [self ticket];
+	bool result = ticket && ticket->IsAllowedToBuild( platform );
+
+	#ifdef Rtt_LITTLE_ENDIAN
+		result &= true;
+	#else
+		result &= false;
+	#endif
+	
+	if ( result )
+	{
+		result &= (fAppPath != nil) && (fSimulator != nil);
+	}
+	
+	return result;
 }
 
 -(BOOL)isHTML5BuildHidden
@@ -3006,12 +3424,26 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 		if ( NSAlertFirstButtonReturn == returnCode )
 		{
 			[[alert window] close];
+			[self deauthorize:(id)contextInfo];
 		}
 	}
 }
 
 -(void)willOpenForBuild:(id)sender
 {
+		const char *loginMessage = "The first time you build for a device you need to sign in.\n\n"
+                "Please sign in using your Corona account information or press 'Register' and go to the website to register.";
+
+		fAuthorizer->SetLoginMessage(loginMessage);
+		
+		[self signin];
+		
+		// If we didn't succeed in logging into the build server, bail
+		if ( ! authorizedToLaunch )
+		{
+			return;
+		}
+
 	fBuildProblemNotified = false;
 }
 
@@ -3034,7 +3466,8 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
     if ( fIOSAppBuildController == nil )
     {
         fIOSAppBuildController = [[IOSAppBuildController alloc] initWithWindowNibName:@"IOSAppBuild"
-                                                                          projectPath:fAppPath];
+                                                                          projectPath:fAppPath
+                                                                           authorizer:fAuthorizer];
 
 		[fIOSAppBuildController setAnalytics:fAnalytics];
     }
@@ -3071,7 +3504,8 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
     if ( fAndroidAppBuildController == nil )
     {
         fAndroidAppBuildController = [[AndroidAppBuildController alloc] initWithWindowNibName:@"AndroidAppBuild"
-                                                                                  projectPath:fAppPath];
+                                                                                  projectPath:fAppPath
+                                                                                   authorizer:fAuthorizer];
 
 		[fAndroidAppBuildController setAnalytics:fAnalytics];
     }
@@ -3107,7 +3541,9 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 	
 	if ( ! fWebAppBuildController )
 	{
-		fWebAppBuildController = [[WebAppBuildController alloc] initWithWindowNibName:@"WebAppBuild" projectPath:fAppPath];
+		fWebAppBuildController = [[WebAppBuildController alloc] initWithWindowNibName:@"WebAppBuild"
+																																			projectPath:fAppPath
+																																			 authorizer:fAuthorizer];
 		
 		[fWebAppBuildController setAnalytics:fAnalytics];
 	}
@@ -3143,7 +3579,8 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 	if ( ! fLinuxAppBuildController )
 	{
 		fLinuxAppBuildController = [[LinuxAppBuildController alloc] initWithWindowNibName:@"LinuxAppBuild"
-																				projectPath:fAppPath];
+																																			projectPath:fAppPath
+																																			 authorizer:fAuthorizer];
 		
 		[fLinuxAppBuildController setAnalytics:fAnalytics];
 	}
@@ -3179,7 +3616,8 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 	if ( fOSXAppBuildController == nil )
 	{
 		fOSXAppBuildController = [[OSXAppBuildController alloc] initWithWindowNibName:@"OSXAppBuild"
-                                                                          projectPath:fAppPath];
+                                                                          projectPath:fAppPath
+                                                                           authorizer:fAuthorizer];
 
 		[fOSXAppBuildController setAnalytics:fAnalytics];
 	}
@@ -3217,7 +3655,8 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 	if ( fTVOSAppBuildController == nil )
 	{
 		fTVOSAppBuildController = [[TVOSAppBuildController alloc] initWithWindowNibName:@"TVOSAppBuild"
-                                                                          projectPath:fAppPath];
+                                                                          projectPath:fAppPath
+                                                                           authorizer:fAuthorizer];
 
 		[fTVOSAppBuildController setAnalytics:fAnalytics];
 	}
@@ -3255,6 +3694,14 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 		if ( returnCode == kActionDefault )
 		{
 			[sheet close];
+			if ( @selector(deauthorize:) == contextInfo )
+			{
+				[self deauthorize:self];
+			}
+			else
+			{
+				Rtt_ASSERT_NOT_REACHED();
+			}
 		}
 	}
 }
@@ -3365,6 +3812,13 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 	const char *url = NULL;
 	switch( code )
 	{
+		// TODO: Get rid of this switch stmt.  The caller can pass the URL as the contextInfo!
+		case WebServicesSession::kExpiredError:
+			url = Authorization::kUrlRenew;
+			break;
+		case WebServicesSession::kAgreementError:
+			url = Authorization::kUrlAgreement;
+			break;
 	}
 
 	if ( url )
@@ -3377,9 +3831,23 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 {
 	if ( !fBuildProblemNotified )
 	{
-		[self notifyWithTitle:@"Solar2D Simulator" description:message iconData:nil];
+		[self notifyWithTitle:@"Corona Simulator" description:message iconData:nil];
 		fBuildProblemNotified = true;
 	}
+}
+
+- (BOOL) isTrial
+{
+	const Rtt::AuthorizationTicket *ticket = [self ticket];
+	if( ticket )
+	{
+		return ticket->IsTrial();
+	}
+	else 
+	{
+		return YES;
+	}
+
 }
 
 // -----------------------------------------------------------------------------
@@ -3479,7 +3947,7 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 			FileWatch_StopMonitoringFolder(luaResourceFolderMonitor);
 
 			NSAlert* relaunchAlert = [[[NSAlert alloc] init] autorelease];
-			[relaunchAlert setMessageText:@"Project has been modified"];
+			[relaunchAlert setMessageText:@"Corona project has been modified"];
 			[relaunchAlert setInformativeText:@"Would you like to relaunch the Simulator?"];
 			[relaunchAlert addButtonWithTitle:@"Relaunch Simulator"];
 			[relaunchAlert addButtonWithTitle:@"Ignore"];
@@ -3662,21 +4130,13 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
         NSInteger minorVersion;
         NSInteger patchVersion;
     } OperatingSystemVersion;
-    OperatingSystemVersion osVersion = {0};
+    OperatingSystemVersion osVersion;
     SEL operatingSystemVersionSelector = NSSelectorFromString(@"operatingSystemVersion");
 
     if ([[NSProcessInfo processInfo] respondsToSelector:operatingSystemVersionSelector])
     {
         // this works on 10.10 and above (and, apparently, 10.9)
-        NSMethodSignature *signature = [NSProcessInfo instanceMethodSignatureForSelector:operatingSystemVersionSelector];
-        if(signature)
-        {
-            NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
-            [invocation setTarget:[NSProcessInfo processInfo]];
-            [invocation setSelector:operatingSystemVersionSelector];
-            [invocation invoke];
-            [invocation getReturnValue:&osVersion];
-        }
+        osVersion = ((OperatingSystemVersion(*)(id, SEL))objc_msgSend_stret)([NSProcessInfo processInfo], operatingSystemVersionSelector);
     }
     else
     {
@@ -3714,14 +4174,14 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 
     if ([self compareOSVersion:currentOSVersion with:kosVersionMinimum] == NSOrderedAscending)
     {
-        NSString *msg = [NSString stringWithFormat:@"This version of macOS (%@) is too old to run Solar2D.\n\nMinimum supported macOS version is %@", currentOSVersion, kosVersionPrevious];
+        NSString *msg = [NSString stringWithFormat:@"This version of macOS (%@) is too old to run Corona.\n\nMinimum supported macOS version is %@", currentOSVersion, kosVersionPrevious];
 
         [alert setMessageText:@"macOS Version Error"];
         [alert setInformativeText:msg];
         [alert setAlertStyle:NSCriticalAlertStyle];
         [alert addButtonWithTitle:@"Exit"];
 
-        NSLog( @"Solar2D Simulator: %@", msg );
+        NSLog( @"Corona Simulator: %@", msg );
 
         [alert runModal];  // we exit when they hit the button so run modally here
         
@@ -3729,7 +4189,7 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
     }
     else if ([self compareOSVersion:currentOSVersion with:kosVersionCurrent] == NSOrderedDescending)
     {
-        NSString *msg = [NSString stringWithFormat:@"This version of macOS (%@) is not supported. It is newer than the one this version of Solar2D was designed for (%@).\n\nProceed with caution, as some things might not work correctly.\n\nPlease report any issues you find with Solar2D and the new version of macOS to http://github.com/coronalabs/corona/issues", currentOSVersion, kosVersionCurrent];
+        NSString *msg = [NSString stringWithFormat:@"This version of macOS (%@) is not supported. It is newer than the one this version of Corona was designed for (%@).\n\nProceed with caution, as some things might not work correctly.\n\nPlease report any issues you find with Corona and the new version of macOS to support@coronalabs.com", currentOSVersion, kosVersionCurrent];
 
         [alert setMessageText:@"macOS Version Warning"];
         [alert setInformativeText:msg];
@@ -3737,11 +4197,11 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
         [alert addButtonWithTitle:@"Continue"];
         [alert setShowsSuppressionButton:YES];
 
-        NSLog( @"Solar2D Simulator: %@", msg );
+        NSLog( @"Corona Simulator: %@", msg );
     }
     else if ([self compareOSVersion:currentOSVersion with:kosVersionPrevious] == NSOrderedAscending)
     {
-        NSString *msg = [NSString stringWithFormat:@"This version of macOS (%@) is not supported. It is older than the one this version of Solar2D was designed for (%@).\n\nProceed with caution, as some things might not work correctly.", currentOSVersion, kosVersionCurrent];
+        NSString *msg = [NSString stringWithFormat:@"This version of macOS (%@) is not supported. It is older than the one this version of Corona was designed for (%@).\n\nProceed with caution, as some things might not work correctly.", currentOSVersion, kosVersionCurrent];
 
         [alert setMessageText:@"macOS Version Warning"];
         [alert setInformativeText:msg];
@@ -3749,7 +4209,7 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
         [alert addButtonWithTitle:@"Continue"];
         [alert setShowsSuppressionButton:YES];
 
-        NSLog( @"Solar2D Simulator: %@", msg );
+        NSLog( @"Corona Simulator: %@", msg );
     }
     else
     {
@@ -3836,33 +4296,29 @@ RunLoopObserverCallback( CFRunLoopObserverRef observer, CFRunLoopActivity activi
 	[NSApp arrangeInFront:sender];
 }
 
--(void) clearConsole
-{
-	if ([consoleTask isRunning])
-	{
-		CFNotificationCenterPostNotification( CFNotificationCenterGetDistributedCenter(), CFSTR("CoronaConsole.clearConsole"), NULL, NULL, YES);
-	}
-}
-
 - (IBAction)consoleMenuitem:(id)sender
 {
 	if ([consoleTask isRunning])
 	{
-		CFNotificationCenterPostNotification( CFNotificationCenterGetDistributedCenter(), CFSTR("CoronaConsole.bringToFront"), NULL, NULL, YES);
-	}
-}
+		// Signal the logger to bring its window to the front
+		pid_t consolePID = [consoleTask processIdentifier];
 
-static void BringToFrontCallback(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo)
-{
-	AppDelegate *appDelegate = (__bridge AppDelegate*)observer;
-	[appDelegate bringAllToFront:nil];
-	CFNotificationCenterRemoveObserver(center, observer, name, object);
+		if (consolePID != 0)
+		{
+			kill(consolePID, SIGHUP);
+		}
+	}
 }
 
 - (void)applicationWillBecomeActive:(NSNotification *)aNotification
 {
-	CFNotificationCenterAddObserver(CFNotificationCenterGetDistributedCenter(), (__bridge const void *)(self), BringToFrontCallback, CFSTR("CoronaSimulator.bringToFront"), NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+	// Bring Console helper app to the foreground
 	[self consoleMenuitem:nil];
+	// Bring the Simulator to the foreground slightly later so it ends up on top
+	[self performSelector:@selector(bringAllToFront:)
+			   withObject:nil
+			   afterDelay:0.1
+				  inModes:@[ NSRunLoopCommonModes ]];
 }
 
 // -----------------------------------------------------------------------------
@@ -3894,28 +4350,40 @@ static void BringToFrontCallback(CFNotificationCenterRef center, void *observer,
 		return 0;
 	}
 
-    float dockIconBounceTime = 5.0;
+    NSString *dockIconBounceTimeString = [[NSUserDefaults standardUserDefaults] stringForKey:kDockIconBounceTime];
+    NSInteger dockIconBounceTime = 0;
 
-	id dockIconBounceTimeSetting = [[NSUserDefaults standardUserDefaults] stringForKey:kDockIconBounceTime];
-    if ([dockIconBounceTimeSetting respondsToSelector:@selector(integerValue)])
+    if (dockIconBounceTimeString == nil)
     {
-        dockIconBounceTime = [dockIconBounceTimeSetting integerValue];
+        // Preference not set, use default
+        dockIconBounceTime = 5;
+    }
+    else
+    {
+        dockIconBounceTime = [dockIconBounceTimeString integerValue];
     }
 
 	if (dockIconBounceTime == 0)
 	{
 		return 0;
 	}
-	
-	NSInteger attentionId = [super requestUserAttention:requestType];
-	
-	if (dockIconBounceTime > 0)
+	else if (dockIconBounceTime > 0)
 	{
-		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(dockIconBounceTime * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-			[self cancelUserAttentionRequest:attentionId];
-		});
+        // Bounce the icon
+        fAttentionRequestID = [super requestUserAttention:requestType];
+
+        // Schedule cancellation of bouncing (make sure we include modal runloop modes)
+        [self performSelector:@selector(cancelUserAttentionRequest:)
+                   withObject:(id)fAttentionRequestID
+                   afterDelay:dockIconBounceTime
+                      inModes:@[ NSRunLoopCommonModes ]];
+
+        return fAttentionRequestID;
     }
-	return attentionId;
+    else
+    {
+        return [super requestUserAttention:requestType];
+    }
 }
 
 

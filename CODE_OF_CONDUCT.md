@@ -1,4 +1,4 @@
-# Solar2D Community Code of Conduct
+# Corona Community Code of Conduct
 
 ## Our Pledge
 

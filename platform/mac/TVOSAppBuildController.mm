@@ -1,14 +1,33 @@
 //////////////////////////////////////////////////////////////////////////////
 //
-// This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
-// Home page: https://github.com/coronalabs/corona
+// Copyright (C) 2018 Corona Labs Inc.
 // Contact: support@coronalabs.com
+//
+// This file is part of the Corona game engine.
+//
+// Commercial License Usage
+// Licensees holding valid commercial Corona licenses may use this file in
+// accordance with the commercial license agreement between you and 
+// Corona Labs Inc. For licensing terms and conditions please contact
+// support@coronalabs.com or visit https://coronalabs.com/com-license
+//
+// GNU General Public License Usage
+// Alternatively, this file may be used under the terms of the GNU General
+// Public license version 3. The license is as published by the Free Software
+// Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+// of this file. Please review the following information to ensure the GNU 
+// General Public License requirements will
+// be met: https://www.gnu.org/licenses/gpl-3.0.html
+//
+// For overview and more information on licensing please refer to README.md
 //
 //////////////////////////////////////////////////////////////////////////////
 
 #include "Core/Rtt_Build.h"
 
+#include "Rtt_Authorization.h"
+#include "Rtt_AuthorizationTicket.h"
+#include "Rtt_WebServicesSession.h"
 #include "Rtt_MacConsolePlatform.h"
 #include "Rtt_Assert.h"
 #include "Rtt_MacPlatform.h"
@@ -70,9 +89,9 @@ static NSString *kValueNone = @"None";
 
 @implementation TVOSAppBuildController
 
-- (id)initWithWindowNibName:(NSString*)nibFile projectPath:(NSString *)projPath;
+- (id)initWithWindowNibName:(NSString*)nibFile projectPath:(NSString *)projPath authorizer:(const Rtt::Authorization *)authorizer;
 {
-	self = [super initWithWindowNibName:nibFile projectPath:projPath];
+	self = [super initWithWindowNibName:nibFile projectPath:projPath authorizer:authorizer];
 
 	if ( self )
 	{
@@ -138,19 +157,7 @@ static NSString *kValueNone = @"None";
 			for (NSString *os in sortedOSKeys)
 			{
 				NSMenuItem *newTitle = [[NSMenuItem alloc] init];
-				NSString *prettyOsName = os;
-				NSRange prefixRange = [prettyOsName rangeOfString:@"com.apple.CoreSimulator.SimRuntime."];
-				if(prefixRange.location == 0)
-				{
-					prettyOsName = [prettyOsName stringByReplacingCharactersInRange:prefixRange withString:@""];
-					NSRange firstDash = [prettyOsName rangeOfString:@"-"];
-					if(firstDash.location != NSNotFound)
-					{
-						prettyOsName = [prettyOsName stringByReplacingCharactersInRange:firstDash withString:@" "];
-					}
-					prettyOsName = [prettyOsName stringByReplacingOccurrencesOfString:@"-" withString:@"."];
-				}
-				[newTitle setTitle:prettyOsName];
+				[newTitle setTitle:os];
 				[newTitle setEnabled:NO];
 				[[availableSimulatorsPopup menu] addItem:newTitle];
 
@@ -159,7 +166,7 @@ static NSString *kValueNone = @"None";
 
 				for (NSString *device in sortedDeviceKeys)
 				{
-					TVOSSimulatorMenuItem *newItem = [[TVOSSimulatorMenuItem alloc] initWithFullTitle:[NSString stringWithFormat:@"%@ / %@", device, prettyOsName]
+					TVOSSimulatorMenuItem *newItem = [[TVOSSimulatorMenuItem alloc] initWithFullTitle:[NSString stringWithFormat:@"%@ / %@", device, os]
 																								title:[NSString stringWithFormat:@"      %@", device]];
 
 					[newItem setEnabled:YES];
@@ -218,7 +225,7 @@ static NSString *kValueNone = @"None";
 		}
 	}
 
-	[self populateTargetSDK:[self window] showBeta:true];
+	[self populateTargetSDK:[self window] showBeta:[appDelegate isDailyBuild]];
 }
 
 - (void) didSelectSimulator:(NSMenuItem *)menuItem
@@ -316,7 +323,7 @@ static NSString *kValueNone = @"None";
 		identity = [currentProvisioningProfileItem.fingerprint UTF8String];
 		provisionFile = [currentProvisioningProfileItem.provisionPath UTF8String];
 
-		if ( [[currentProvisioningProfileItem title] contains:kiPhoneDistributionIdentityTag] || [[currentProvisioningProfileItem title] contains:kAppleDistributionIdentityTag] )
+		if ( [[currentProvisioningProfileItem title] contains:kiPhoneDistributionIdentityTag] )
 		{
 			// Here, we mean distribution build, as in store build,
 			// so a store build is anything that does NOT have provisioned devices
@@ -334,6 +341,31 @@ static NSString *kValueNone = @"None";
 
     MacConsolePlatform platform;
     MacPlatformServices *services = new MacPlatformServices( platform );
+    WebServicesSession *session = new WebServicesSession( *services );
+    __block NSString *message = nil;
+    __block BOOL loginSuccessful = NO;
+
+    [self setProgressBarLabel:@"Authorizing build…"];
+
+    // Login to the authorization server
+    void (^login)() = ^()
+    {
+        loginSuccessful = [self loginSession:session services:services ticket:[appDelegate ticket] message:&message];
+        [message retain];  // ObjC - it is OK to call stuff on nil :)
+    };
+
+    [self runLengthyOperationForWindow:[self window] delayProgressWindowBy:0 allowStop:NO withBlock:login];
+
+    [message autorelease];
+
+    if (! loginSuccessful)
+    {
+		[self logEvent:@"build-bungled" key:@"reason" value:@"cannot-login"];
+
+        [self showError:@"Cannot Login To Build Server" message:message helpURL:nil parentWindow:[self window]];
+
+        return;
+    }
 
     const char* name = [self.appName UTF8String];
     const char* versionname = NULL;
@@ -442,10 +474,6 @@ static NSString *kValueNone = @"None";
 
     params->SetStripDebug( isStripDebug );
 	params->SetLiveBuild(isLiveBuild);
-	if(currentSDK.customTemplate)
-	{
-		params->SetCustomTemplate([currentSDK.customTemplate UTF8String]);
-	}
 
 #ifdef AUTO_INCLUDE_MONETIZATION_PLUGIN
 /*
@@ -467,7 +495,7 @@ static NSString *kValueNone = @"None";
     [self setProgressBarLabel:@"Building for tvOS…"];
 
     // Do the actual build
-    __block size_t code = PlatformAppPackager::kNoError;
+    __block size_t code = WebServicesSession::kNoError;
 
 	[self logEvent:@"build"];
 
@@ -477,7 +505,7 @@ static NSString *kValueNone = @"None";
         [[NSUserDefaults standardUserDefaults] synchronize];
         
         NSString* tmpDirBase = NSTemporaryDirectory();
-        code = packager->Build( params, [tmpDirBase UTF8String] );
+        code = packager->Build( params, *session, [tmpDirBase UTF8String] );
     };
 
     [self runLengthyOperationForWindow:[self window] delayProgressWindowBy:0 allowStop:YES withBlock:performBuild];
@@ -489,7 +517,7 @@ static NSString *kValueNone = @"None";
 		Rtt_Log("WARNING: Build stopped by request");
 		[self showMessage:@"Build Stopped" message:@"Build stopped by request" helpURL:nil parentWindow:[self window]];
 	}
-	else if (code == PlatformAppPackager::kNoError)
+	else if (code == WebServicesSession::kNoError)
     {
 	[self logEvent:@"build-succeeded"];
 
@@ -678,7 +706,7 @@ static NSString *kValueNone = @"None";
             {
 				[self logEvent:@"build-bungled" key:@"reason" value:@"not-distribution-provisioning-profile"];
 
-                [self showError:@"Cannot Send To App Store" message:@"Only apps built with distribution profiles can be sent to the App Store.\n\nChoose a provisioning profile signed with an \"iPhone Distribution\" or \"Apple Distribution\" certificate and note that the provisioning profile used should not specify any devices (i.e. is not \"ad hoc\")." helpURL:@"https://docs.coronalabs.com/guide/distribution/iOSBuild/index.html#build-process" parentWindow:[self window]];
+                [self showError:@"Cannot Send To App Store" message:@"Only apps built with distribution profiles can be sent to the App Store.\n\nChoose a provisioning profile signed with an \"iPhone Distribution\" certificate and note that the provisioning profile used should not specify any devices (i.e. is not \"ad hoc\")." helpURL:@"https://docs.coronalabs.com/guide/distribution/iOSBuild/index.html#build-process" parentWindow:[self window]];
 
                 result = NO;
             }
@@ -752,7 +780,7 @@ static NSString *kValueNone = @"None";
 	using namespace Rtt;
 
 	IdentityMenuItem* item = currentProvisioningProfileItem; Rtt_ASSERT( item != [fSigningIdentities itemAtIndex:0] );
-	BOOL result = ( [[item title] contains:kiPhoneDistributionIdentityTag]  || [[item title] contains:kAppleDistributionIdentityTag] );
+	BOOL result = ( [[item title] contains:kiPhoneDistributionIdentityTag] );
 
 	if ( result )
 	{
@@ -773,7 +801,7 @@ static NSString *kValueNone = @"None";
 	IdentityMenuItem* item = currentProvisioningProfileItem; Rtt_ASSERT( item != [fSigningIdentities itemAtIndex:0] );
 
 	// A developer build does NOT have iPhone Distribution in the prefix
-	BOOL result = ! ( [[item title] contains:kiPhoneDistributionIdentityTag] || [[item title] contains:kAppleDistributionIdentityTag]);
+	BOOL result = ! ( [[item title] contains:kiPhoneDistributionIdentityTag] );
 	return result;
 }
 
@@ -1081,7 +1109,7 @@ static NSString *kValueNone = @"None";
 {
      [self setProgressBarLabel:@"Sending app to App Store…"];
 
-    __block size_t code = PlatformAppPackager::kNoError;
+    __block size_t code = WebServicesSession::kNoError;
 
 #ifdef USE_APPLICATION_LOADER
 	// All this does is make calls to Application Loader so unless we're using that, it can skipped
@@ -1093,7 +1121,7 @@ static NSString *kValueNone = @"None";
     [self runLengthyOperationForWindow:[self window] delayProgressWindowBy:0 allowStop:NO withBlock:sendToAppStoreBlock];
 #endif // USE_APPLICATION_LOADER
 
-    if (code != PlatformAppPackager::kNoError)
+    if (code != WebServicesSession::kNoError)
     {
 		NSString *buildMsg = nil;
         NSString *title = nil;
@@ -1131,18 +1159,10 @@ static NSString *kValueNone = @"None";
 						 description:[NSString stringWithFormat:@"Upload of \"%@\" to the App Store is complete", self.appName]
 							iconData:nil];
 #else
-		NSString *message;
-		if([[NSWorkspace sharedWorkspace] URLForApplicationToOpenURL:[NSURL URLWithString:@"transporter://"]])
-		{
-			message = [NSString stringWithFormat:@"*%@* is ready to be sent to the App Store using the [Transporter](launch-bundle:com.apple.TransporterApp|macappstore://itunes.apple.com/app/id1450874784) app.\n\nPress *Add App* on the *Transporter* window to load `%@` into it", self.appName, [[self appBundleFile] stringByReplacingOccurrencesOfString:@".app" withString:@".ipa"]];
-		}
-		else
-		{
-			message = [NSString stringWithFormat:@"*%@* is ready to be sent to the App Store. Install and run the [Transporter](launch-bundle:com.apple.TransporterApp|macappstore://itunes.apple.com/app/id1450874784) app.\n\nAfter signing into *Transporter* app, press *Add App* on its window to load `%@` into it", self.appName, [[self appBundleFile] stringByReplacingOccurrencesOfString:@".app" withString:@".ipa"]];
-		}
+		NSString *message = [NSString stringWithFormat:@"*%@* is ready to be sent to the App Store using [Application Loader](launch-bundle:com.apple.itunes.connect.ApplicationLoader).\n\nPress *Choose* on the *Application Loader* window to load\n*%@* into it", self.appName, [[self appBundleFile] stringByReplacingOccurrencesOfString:@".app" withString:@".ipa"]];
 
 		// Open Application Loader
-		[[NSWorkspace sharedWorkspace] launchAppWithBundleIdentifier:@"com.apple.TransporterApp"
+		[[NSWorkspace sharedWorkspace] launchAppWithBundleIdentifier:@"com.apple.itunes.connect.ApplicationLoader"
 															 options:NSWorkspaceLaunchDefault
 									  additionalEventParamDescriptor:nil
 													launchIdentifier:nil];

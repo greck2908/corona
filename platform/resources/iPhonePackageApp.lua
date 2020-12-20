@@ -1,9 +1,25 @@
 ------------------------------------------------------------------------------
 --
--- This file is part of the Corona game engine.
--- For overview and more information on licensing please refer to README.md 
--- Home page: https://github.com/coronalabs/corona
+-- Copyright (C) 2018 Corona Labs Inc.
 -- Contact: support@coronalabs.com
+--
+-- This file is part of the Corona game engine.
+--
+-- Commercial License Usage
+-- Licensees holding valid commercial Corona licenses may use this file in
+-- accordance with the commercial license agreement between you and 
+-- Corona Labs Inc. For licensing terms and conditions please contact
+-- support@coronalabs.com or visit https://coronalabs.com/com-license
+--
+-- GNU General Public License Usage
+-- Alternatively, this file may be used under the terms of the GNU General
+-- Public license version 3. The license is as published by the Free Software
+-- Foundation and appearing in the file LICENSE.GPL3 included in the packaging
+-- of this file. Please review the following information to ensure the GNU 
+-- General Public License requirements will
+-- be met: https://www.gnu.org/licenses/gpl-3.0.html
+--
+-- For overview and more information on licensing please refer to README.md
 --
 ------------------------------------------------------------------------------
 
@@ -604,7 +620,7 @@ local function isBuildForDistribution( options )
 		return false
 	end
 
-	local retval = string.match( options.signingIdentityName, "iPhone Distribution" ) or string.match( options.signingIdentityName, "Apple Distribution" )
+	local retval = string.match( options.signingIdentityName, "iPhone Distribution" )
 	if retval then
 		return true
 	else
@@ -620,7 +636,7 @@ local function isBuildForAppStoreDistribution( options )
 		return false
 	end
 
-	local retval = string.match( options.signingIdentityName, "iPhone Distribution" ) or string.match( options.signingIdentityName, "Apple Distribution" )
+	local retval = string.match( options.signingIdentityName, "iPhone Distribution" )
 	if retval then
 		-- Adhoc profiles have a 'ProvisionedDevices' section, pure distribution profiles do not
 		local hasProvisionedDevices = captureCommandOutput("security cms -D -i '".. options.mobileProvision .."' | fgrep -c 'ProvisionedDevices'")
@@ -739,12 +755,12 @@ local function packageApp( options )
 
 		local bundleOptions = {
 			exe=options.bundleexecutable,
-			sdkBase=iPhoneSDKRoot,
-			app=appBundleFileUnquoted,
+			sdkBase=quoteString(iPhoneSDKRoot),
+			app=appBundleFile,
 			identity=options.signingIdentity,
 			platform="iphoneos"
 		}
-		local bundleScript = '$(xcrun -f swift-stdlib-tool) --copy --verbose --sign {identity} --scan-executable "{app}/{exe}" --scan-folder "{app}/Frameworks" --platform {platform} --toolchain "{sdkBase}/Toolchains/XcodeDefault.xctoolchain" --destination "{app}/Frameworks" --strip-bitcode '
+		local bundleScript = '$(xcrun -f swift-stdlib-tool) --copy --verbose --sign {identity} --scan-executable "{app}/{exe}" --scan-folder "{app}/Frameworks" --platform {platform} --toolchain --toolchain "{sdkBase}/Toolchains/Swift_2.3.xctoolchain" --toolchain "{sdkBase}/Toolchains/XcodeDefault.xctoolchain" --destination "{app}/Frameworks" --strip-bitcode '
 		
 		if not options.signingIdentity then
 			bundleOptions.identity = "-"
@@ -767,7 +783,6 @@ local function packageApp( options )
 			-- just embed swift
 			bundleScript = bundleScript .. '--resource-destination "{app}" --resource-library libswiftRemoteMirror.dylib '
 		end
-		bundleScript = bundleScript .. ' && find "{app}/Frameworks" -iname "libSwift*.dylib" -exec $(xcrun -f lipo) {} -remove arm64e -output {} \\;'
 
 		bundleScript = bundleScript:gsub("({([^}]+)})",
 		function(whole,i) return bundleOptions[i] or whole end)
@@ -978,7 +993,7 @@ function buildExe( options )
 	-- Otherwise we assume there is an exe already available.
 	if builderCtor then
 		-- Temporarily modify Lua require path
-		local pathOld = package.path or ""
+		local pathOld = package.path
 		package.path = libtemplateDir .. '/?.lua;' .. pathOld
 
 		-- Instantiate Builder
@@ -1257,7 +1272,7 @@ function iPhonePostPackage( params )
 			-- runScript( "cp "..tmpDir.."/output.zip /tmp/" )
 		end
 
-		setStatus("Unpacking build with plugins")
+		setStatus("Unpacking build from server")
 
 		-- The file 'Default-568h@2x.png' is a special case: if there is one in the project,
 		-- don't overwrite it with the one from the template
