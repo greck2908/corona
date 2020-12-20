@@ -1,25 +1,9 @@
 ------------------------------------------------------------------------------
 --
--- Copyright (C) 2018 Corona Labs Inc.
--- Contact: support@coronalabs.com
---
 -- This file is part of the Corona game engine.
---
--- Commercial License Usage
--- Licensees holding valid commercial Corona licenses may use this file in
--- accordance with the commercial license agreement between you and 
--- Corona Labs Inc. For licensing terms and conditions please contact
--- support@coronalabs.com or visit https://coronalabs.com/com-license
---
--- GNU General Public License Usage
--- Alternatively, this file may be used under the terms of the GNU General
--- Public license version 3. The license is as published by the Free Software
--- Foundation and appearing in the file LICENSE.GPL3 included in the packaging
--- of this file. Please review the following information to ensure the GNU 
--- General Public License requirements will
--- be met: https://www.gnu.org/licenses/gpl-3.0.html
---
--- For overview and more information on licensing please refer to README.md
+-- For overview and more information on licensing please refer to README.md 
+-- Home page: https://github.com/coronalabs/corona
+-- Contact: support@coronalabs.com
 --
 ------------------------------------------------------------------------------
 
@@ -123,6 +107,24 @@ local function getDelegates(tmpDir)
 	return delegates
 end
 
+local function inArray(array, item)
+    for key, value in pairs(array) do
+        if value == item then return key end
+    end
+    return nil
+end
+local function addLiveBuildsPlist(buildSettingsPlist, options)
+	if options.liveBuild then
+		buildSettingsPlist = buildSettingsPlist or {}
+		buildSettingsPlist.NSLocalNetworkUsageDescription = buildSettingsPlist.NSLocalNetworkUsageDescription or "Solar2D Live Builds are using local network to synchronize the project."
+		buildSettingsPlist.NSBonjourServices = buildSettingsPlist.NSBonjourServices or {}
+		if not inArray(buildSettingsPlist.NSBonjourServices, "_corona_live._tcp.") then
+			buildSettingsPlist.NSBonjourServices[#buildSettingsPlist.NSBonjourServices + 1] = "_corona_live._tcp."
+		end
+	end
+	return buildSettingsPlist
+end
+
 function CoronaPListSupport.modifyPlist( options )
 	local delegates
 
@@ -213,7 +215,11 @@ function CoronaPListSupport.modifyPlist( options )
 			-- Apple treats this the build number so, if it hasn't been specified in the build.settings, we
 			-- set it to the current date and time which is unique for the app and human readable
 			bundleVersionSource = (infoPlist.CFBundleVersion == "@BUNDLE_VERSION@") and "set by Simulator" or "set by Info.plist"
-			infoPlist.CFBundleVersion = os.date("%Y.%m.%d%H%M")
+			infoPlist.CFBundleVersion = os.date("%Y.7%m.7%d%H%M")
+			local datedata = os.date( "!*t")
+			if datedata.year > 2020 then
+				infoPlist.CFBundleVersion = datedata.year .. '.' .. datedata.month.."." .. datedata.day .. os.date("!%H%M")
+			end
 		end
 
 		local version = options.bundleversion or "1.0.0"
@@ -331,6 +337,7 @@ function CoronaPListSupport.modifyPlist( options )
 
 			-- add'l custom plist settings specific to iPhone
 			local buildSettingsPlist = settings.iphone and settings.iphone.plist
+			buildSettingsPlist = addLiveBuildsPlist(buildSettingsPlist, options)
 
 			if buildSettingsPlist then
 				--print("Adding custom plist settings: ".. json.encode(buildSettingsPlist))
@@ -391,6 +398,7 @@ function CoronaPListSupport.modifyPlist( options )
 
 			-- add'l custom plist settings specific to tvOS
 			local buildSettingsPlist = settings.tvos and settings.tvos.plist
+			buildSettingsPlist = addLiveBuildsPlist(buildSettingsPlist, options)
 
 			if buildSettingsPlist then
 				if buildSettingsPlist.CFBundleShortVersionString then
@@ -561,7 +569,7 @@ function CoronaPListSupport.generateEntitlements( settings, platform, provisionP
 				end
 			end
 			if ppEnt and appId then
-				local t = {}
+				local t = { ["com.apple.application-identifier"] = platform == 'osx' and appId or nil }
 				local kvsContainer = ppEnt["com.apple.developer.ubiquity-kvstore-identifier"]
 				if kvsContainer then
 					if "table" == type(platformSettings.iCloud) and platformSettings.iCloud["kvstore-identifier"] then
